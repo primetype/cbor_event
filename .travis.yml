@@ -73,6 +73,9 @@ matrix:
     # - env: TARGET=thumbv7em-none-eabihf
     # - env: TARGET=thumbv7m-none-eabi
 
+    # *WASM
+    - env: TARGET=wasm32-unknown-unknown DISABLE_TESTS=1
+
     # Testing other channels
     - env: TARGET=x86_64-unknown-linux-gnu
       rust: 1.29.0
