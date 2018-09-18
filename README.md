@@ -1,6 +1,6 @@
 # CBOR Event library
 
-[![Build Status](https://travis-ci.org/input-output-hk/rust-cardano.svg?branch=master)](https://travis-ci.org/input-output-hk/rust-cardano)
+[![Build Status](https://travis-ci.org/primetype/cbor_event.svg?branch=master)](https://travis-ci.org/primetype/cbor_event)
 ![MIT or APACHE-2 licensed](https://img.shields.io/badge/licensed-MIT%20or%20APACHE--2-blue.svg)
 
 This library provides a simple, yet efficient CBOR binary parser/serialiser.
