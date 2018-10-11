@@ -5,6 +5,8 @@ use result::Result;
 use types::{Type, Special};
 use len::Len;
 
+use de::{RawCbor};
+
 pub trait Serialize {
     fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>>;
 }
@@ -512,6 +514,13 @@ impl<W: Write+Sized> Serializer<W> {
             },
             Special::Break         => self.write_u8(Type::Special.to_byte(0x1f)),
         }
+    }
+
+    /// write the given RawCbor in the serializer, assuming the `RawCbor` object
+    /// is actually a valid CBOR encoded object
+    pub fn append_raw_cbor<'a>(mut self, raw_cbor: &RawCbor<'a>) -> Result<Self> {
+        self.0.write_all(&raw_cbor)?;
+        Ok(self)
     }
 
     /// Convenient member function to chain serialisation
