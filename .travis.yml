@@ -15,9 +15,9 @@ matrix:
       rust: stable
       os: osx
     - name: 1.29 (linux)
-      rust: 1.29
+      rust: 1.29.0
       os: linux
-    - name: stable release (linux)
+    - name: stable (linux) --release
       rust: stable
       os: linux
       script:
