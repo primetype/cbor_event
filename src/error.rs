@@ -1,7 +1,7 @@
-use std::{fmt, error};
+use std::{error, fmt};
 
-use types::Type;
 use len;
+use types::Type;
 
 /// all expected error for cbor parsing and serialising
 #[derive(Debug)]
@@ -30,13 +30,17 @@ pub enum Error {
     IoError(::std::io::Error),
     TrailingData,
 
-    CustomError(String)
+    CustomError(String),
 }
 impl From<::std::string::FromUtf8Error> for Error {
-    fn from(e: ::std::string::FromUtf8Error) -> Self { Error::InvalidTextError(e) }
+    fn from(e: ::std::string::FromUtf8Error) -> Self {
+        Error::InvalidTextError(e)
+    }
 }
 impl From<::std::io::Error> for Error {
-    fn from(e: ::std::io::Error) -> Self { Error::IoError(e) }
+    fn from(e: ::std::io::Error) -> Self {
+        Error::IoError(e)
+    }
 }
 
 impl fmt::Display for Error {
@@ -51,19 +55,41 @@ impl fmt::Display for Error {
             ExpectedI16 => write!(f, "Invalid cbor: expected 16bit long negative integer"),
             ExpectedI32 => write!(f, "Invalid cbor: expected 32bit long negative integer"),
             ExpectedI64 => write!(f, "Invalid cbor: expected 64bit long negative integer"),
-            NotEnough(got, exp) => write!(f, "Invalid cbor: not enough bytes, expect {} bytes but received {} bytes.", exp, got),
-            Expected(exp, got) => write!(f, "Invalid cbor: not the right type, expected `{:?}' byte received `{:?}'.", exp, got),
+            NotEnough(got, exp) => write!(
+                f,
+                "Invalid cbor: not enough bytes, expect {} bytes but received {} bytes.",
+                exp, got
+            ),
+            Expected(exp, got) => write!(
+                f,
+                "Invalid cbor: not the right type, expected `{:?}' byte received `{:?}'.",
+                exp, got
+            ),
             ExpectedSetTag => write!(f, "Invalid cbor: expected set tag"),
-            UnknownLenType(byte) => write!(f, "Invalid cbor: not the right sub type: 0b{:05b}", byte),
-            IndefiniteLenNotSupported(t) => write!(f, "Invalid cbor: indefinite length not supported for cbor object of type `{:?}'.", t),
-            WrongLen(expected_len, actual_len, error_location) =>
-                write!(f, "Invalid cbor: expected tuple '{}' of length {} but got length {:?}.",
-                       error_location, expected_len, actual_len),
-            InvalidTextError(_utf8_error) => write!(f, "Invalid cbor: expected a valid utf8 string text."),
-            CannotParse(t, bytes) => write!(f, "Invalid cbor: cannot parse the cbor object `{:?}' with the following bytes {:?}", t, bytes),
+            UnknownLenType(byte) => {
+                write!(f, "Invalid cbor: not the right sub type: 0b{:05b}", byte)
+            }
+            IndefiniteLenNotSupported(t) => write!(
+                f,
+                "Invalid cbor: indefinite length not supported for cbor object of type `{:?}'.",
+                t
+            ),
+            WrongLen(expected_len, actual_len, error_location) => write!(
+                f,
+                "Invalid cbor: expected tuple '{}' of length {} but got length {:?}.",
+                error_location, expected_len, actual_len
+            ),
+            InvalidTextError(_utf8_error) => {
+                write!(f, "Invalid cbor: expected a valid utf8 string text.")
+            }
+            CannotParse(t, bytes) => write!(
+                f,
+                "Invalid cbor: cannot parse the cbor object `{:?}' with the following bytes {:?}",
+                t, bytes
+            ),
             IoError(_io_error) => write!(f, "Invalid cbor: I/O error"),
             TrailingData => write!(f, "Unexpected trailing data in CBOR"),
-            CustomError(err) => write!(f, "Invalid cbor: {}", err)
+            CustomError(err) => write!(f, "Invalid cbor: {}", err),
         }
     }
 }
@@ -73,7 +99,7 @@ impl error::Error for Error {
         match self {
             Error::IoError(ref error) => Some(error),
             Error::InvalidTextError(ref error) => Some(error),
-            _ => None
+            _ => None,
         }
     }
 }

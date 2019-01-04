@@ -58,35 +58,35 @@
 //! # assert_eq!(bytes, [0x2b].as_ref());
 //! ```
 
-mod result;
-mod error;
-mod types;
-mod len;
 pub mod de;
-pub mod se;
-mod value;
+mod error;
+mod len;
 mod macros;
+mod result;
+pub mod se;
+mod types;
+mod value;
 
-pub use len::{*};
-pub use types::{*};
-pub use result::{Result};
-pub use error::{Error};
-pub use de::{Deserialize};
-pub use se::{Serialize};
+pub use de::Deserialize;
+pub use error::Error;
+pub use len::*;
+pub use result::Result;
+pub use se::Serialize;
+pub use types::*;
 pub use value::{ObjectKey, Value};
 
-const MAX_INLINE_ENCODING : u64 = 23;
+const MAX_INLINE_ENCODING: u64 = 23;
 
-const CBOR_PAYLOAD_LENGTH_U8  : u8 = 24;
-const CBOR_PAYLOAD_LENGTH_U16 : u8 = 25;
-const CBOR_PAYLOAD_LENGTH_U32 : u8 = 26;
-const CBOR_PAYLOAD_LENGTH_U64 : u8 = 27;
+const CBOR_PAYLOAD_LENGTH_U8: u8 = 24;
+const CBOR_PAYLOAD_LENGTH_U16: u8 = 25;
+const CBOR_PAYLOAD_LENGTH_U32: u8 = 26;
+const CBOR_PAYLOAD_LENGTH_U64: u8 = 27;
 
 /// exported as a convenient function to test the implementation of
 /// [`Serialize`](./se/trait.Serialize.html) and
 /// [`Deserialize`](./de/trait.Deserialize.html).
 ///
-pub fn test_encode_decode<V: Sized+PartialEq+Serialize+Deserialize>(v: &V) -> Result<bool> {
+pub fn test_encode_decode<V: Sized + PartialEq + Serialize + Deserialize>(v: &V) -> Result<bool> {
     let bytes = Serialize::serialize(v, se::Serializer::new_vec())?.finalize();
 
     let mut raw = de::RawCbor::from(&bytes);

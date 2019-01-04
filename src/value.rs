@@ -9,14 +9,14 @@
 //!
 //! This is why all the objects here are marked as deprecated
 
-use types::{Type, Special};
-use result::Result;
+use de::*;
 use error::Error;
 use len::Len;
-use de::*;
+use result::Result;
 use se::*;
+use types::{Special, Type};
 
-use std::{collections::{BTreeMap}, io::Write};
+use std::{collections::BTreeMap, io::Write};
 
 /// CBOR Object key, represents the possible supported values for
 /// a CBOR key in a CBOR Map.
@@ -37,7 +37,7 @@ impl ObjectKey {
     }
 }
 impl Serialize for ObjectKey {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         match self {
             ObjectKey::Integer(ref v) => serializer.write_unsigned_integer(*v),
             ObjectKey::Bytes(ref v) => serializer.write_bytes(v),
@@ -49,9 +49,12 @@ impl Deserialize for ObjectKey {
     fn deserialize<'a>(raw: &mut RawCbor<'a>) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(ObjectKey::Integer(raw.unsigned_integer()?)),
-            Type::Bytes           => Ok(ObjectKey::Bytes(Vec::from(raw.bytes()?.as_ref()))),
-            Type::Text            => Ok(ObjectKey::Text(raw.text()?)),
-            t                     => Err(Error::CustomError(format!("Type `{:?}' is not a support type for CBOR Map's key", t)))
+            Type::Bytes => Ok(ObjectKey::Bytes(Vec::from(raw.bytes()?.as_ref()))),
+            Type::Text => Ok(ObjectKey::Text(raw.text()?)),
+            t => Err(Error::CustomError(format!(
+                "Type `{:?}' is not a support type for CBOR Map's key",
+                t
+            ))),
         }
     }
 }
@@ -73,11 +76,11 @@ pub enum Value {
     Object(BTreeMap<ObjectKey, Value>),
     IObject(BTreeMap<ObjectKey, Value>),
     Tag(u64, Box<Value>),
-    Special(Special)
+    Special(Special),
 }
 
 impl Serialize for Value {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         match self {
             Value::U64(ref v) => serializer.write_unsigned_integer(*v),
             Value::I64(ref v) => serializer.write_negative_integer(*v),
@@ -89,34 +92,30 @@ impl Serialize for Value {
                     serializer = serializer.serialize(element)?;
                 }
                 Ok(serializer)
-            },
+            }
             Value::IArray(ref v) => {
                 let mut serializer = serializer.write_array(Len::Indefinite)?;
                 for element in v {
                     serializer = serializer.serialize(element)?;
                 }
                 serializer.write_special(Special::Break)
-            },
+            }
             Value::Object(ref v) => {
                 let mut serializer = serializer.write_map(Len::Len(v.len() as u64))?;
                 for element in v {
-                    serializer = serializer.serialize(element.0)?
-                                           .serialize(element.1)?;
+                    serializer = serializer.serialize(element.0)?.serialize(element.1)?;
                 }
                 Ok(serializer)
-            },
+            }
             Value::IObject(ref v) => {
                 let mut serializer = serializer.write_map(Len::Indefinite)?;
                 for element in v {
-                    serializer = serializer.serialize(element.0)?
-                                           .serialize(element.1)?;
+                    serializer = serializer.serialize(element.0)?.serialize(element.1)?;
                 }
                 serializer.write_special(Special::Break)
-            },
-            Value::Tag(ref tag, ref v) => {
-                serializer.write_tag(*tag)?.serialize(v.as_ref())
-            },
-            Value::Special(ref v) => serializer.write_special(*v)
+            }
+            Value::Tag(ref tag, ref v) => serializer.write_tag(*tag)?.serialize(v.as_ref()),
+            Value::Special(ref v) => serializer.write_special(*v),
         }
     }
 }
@@ -125,9 +124,9 @@ impl Deserialize for Value {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(Value::U64(raw.unsigned_integer()?)),
             Type::NegativeInteger => Ok(Value::I64(raw.negative_integer()?)),
-            Type::Bytes           => Ok(Value::Bytes(Vec::from(raw.bytes()?.as_ref()))),
-            Type::Text            => Ok(Value::Text(raw.text()?)),
-            Type::Array           => {
+            Type::Bytes => Ok(Value::Bytes(Vec::from(raw.bytes()?.as_ref()))),
+            Type::Text => Ok(Value::Text(raw.text()?)),
+            Type::Array => {
                 let len = raw.array()?;
                 let mut vec = Vec::new();
                 match len {
@@ -142,9 +141,9 @@ impl Deserialize for Value {
                                 vec.push(Deserialize::deserialize(raw)?);
                                 true
                             }
-                        } {};
+                        } {}
                         Ok(Value::IArray(vec))
-                    },
+                    }
                     Len::Len(len) => {
                         for _ in 0..len {
                             vec.push(Deserialize::deserialize(raw)?);
@@ -152,8 +151,8 @@ impl Deserialize for Value {
                         Ok(Value::Array(vec))
                     }
                 }
-            },
-            Type::Map          => {
+            }
+            Type::Map => {
                 let len = raw.map()?;
                 let mut vec = BTreeMap::new();
                 match len {
@@ -170,9 +169,9 @@ impl Deserialize for Value {
                                 vec.insert(k, v);
                                 true
                             }
-                        } {};
+                        } {}
                         Ok(Value::IObject(vec))
-                    },
+                    }
                     Len::Len(len) => {
                         for _ in 0..len {
                             let k = Deserialize::deserialize(raw)?;
@@ -182,21 +181,20 @@ impl Deserialize for Value {
                         Ok(Value::Object(vec))
                     }
                 }
-            },
-            Type::Tag             => {
+            }
+            Type::Tag => {
                 let tag = raw.tag()?;
                 Ok(Value::Tag(tag, Box::new(Deserialize::deserialize(raw)?)))
-            },
-            Type::Special         => Ok(Value::Special(raw.special()?)),
+            }
+            Type::Special => Ok(Value::Special(raw.special()?)),
         }
     }
 }
 
-
 #[cfg(test)]
 mod test {
+    use super::super::test_encode_decode;
     use super::*;
-    use super::super::{test_encode_decode};
 
     #[test]
     fn u64() {
@@ -225,11 +223,11 @@ mod test {
     #[test]
     fn bytes() {
         assert!(test_encode_decode(&Value::Bytes(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0;23])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0;24])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0;256])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0;10293])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0;99999000])).unwrap());
+        assert!(test_encode_decode(&Value::Bytes(vec![0; 23])).unwrap());
+        assert!(test_encode_decode(&Value::Bytes(vec![0; 24])).unwrap());
+        assert!(test_encode_decode(&Value::Bytes(vec![0; 256])).unwrap());
+        assert!(test_encode_decode(&Value::Bytes(vec![0; 10293])).unwrap());
+        assert!(test_encode_decode(&Value::Bytes(vec![0; 99999000])).unwrap());
     }
 
     #[test]
@@ -242,19 +240,29 @@ mod test {
     #[test]
     fn array() {
         assert!(test_encode_decode(&Value::Array(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::Array(vec![Value::U64(0), Value::Text("some text".to_owned())])).unwrap());
+        assert!(test_encode_decode(&Value::Array(vec![
+            Value::U64(0),
+            Value::Text("some text".to_owned())
+        ]))
+        .unwrap());
     }
 
     #[test]
     fn iarray() {
         assert!(test_encode_decode(&Value::IArray(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::IArray(vec![Value::U64(0), Value::Text("some text".to_owned())])).unwrap());
+        assert!(test_encode_decode(&Value::IArray(vec![
+            Value::U64(0),
+            Value::Text("some text".to_owned())
+        ]))
+        .unwrap());
     }
 
     #[test]
     fn tag() {
         assert!(test_encode_decode(&Value::Tag(23, Box::new(Value::U64(0)))).unwrap());
-        assert!(test_encode_decode(&Value::Tag(24, Box::new(Value::Bytes(vec![0;32])))).unwrap());
-        assert!(test_encode_decode(&Value::Tag(0x1ff, Box::new(Value::Bytes(vec![0;624])))).unwrap());
+        assert!(test_encode_decode(&Value::Tag(24, Box::new(Value::Bytes(vec![0; 32])))).unwrap());
+        assert!(
+            test_encode_decode(&Value::Tag(0x1ff, Box::new(Value::Bytes(vec![0; 624])))).unwrap()
+        );
     }
 }

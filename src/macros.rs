@@ -6,9 +6,9 @@
 ///
 #[macro_export]
 macro_rules! cbor {
-    ($x:expr) => ({
+    ($x:expr) => {{
         ::cbor_event::se::Serializer::new_vec()
-            .serialize(& $x)
+            .serialize(&$x)
             .map(|s| s.finalize())
-    });
+    }};
 }

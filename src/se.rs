@@ -1,85 +1,88 @@
 //! CBOR serialisation tooling
-use std::io::{Write};
+use std::io::Write;
 
-use result::Result;
-use types::{Type, Special};
 use len::Len;
+use result::Result;
+use types::{Special, Type};
 
 pub trait Serialize {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>>;
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>>;
 }
 impl<'a, T: Serialize> Serialize for &'a T {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.serialize(*self)
     }
 }
 impl Serialize for u64 {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.write_unsigned_integer(*self)
     }
 }
 impl Serialize for u32 {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.write_unsigned_integer((*self) as u64)
     }
 }
 impl Serialize for u16 {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.write_unsigned_integer((*self) as u64)
     }
 }
 impl Serialize for u8 {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.write_unsigned_integer((*self) as u64)
     }
 }
 impl Serialize for bool {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.write_special(Special::Bool(*self))
     }
 }
 impl Serialize for String {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.write_text(self)
     }
 }
 impl<'a> Serialize for &'a [u8] {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         serializer.write_bytes(self)
     }
 }
 impl<'a, A, B> Serialize for (&'a A, &'a B)
-    where A: Serialize
-        , B: Serialize
+where
+    A: Serialize,
+    B: Serialize,
 {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
-        serializer.write_array(Len::Len(2))?
-                  .serialize(self.0)?
-                  .serialize(self.1)
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+        serializer
+            .write_array(Len::Len(2))?
+            .serialize(self.0)?
+            .serialize(self.1)
     }
 }
 impl<'a, A, B, C> Serialize for (&'a A, &'a B, &'a C)
-    where A: Serialize
-        , B: Serialize
-        , C: Serialize
+where
+    A: Serialize,
+    B: Serialize,
+    C: Serialize,
 {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
-        serializer.write_array(Len::Len(3))?
-                  .serialize(self.0)?
-                  .serialize(self.1)?
-                  .serialize(self.2)
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+        serializer
+            .write_array(Len::Len(3))?
+            .serialize(self.0)?
+            .serialize(self.1)?
+            .serialize(self.2)
     }
 }
 
 impl<T> Serialize for Option<T>
-    where T: Serialize
+where
+    T: Serialize,
 {
-    fn serialize<W: Write+Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
         match self {
             None => serializer.write_array(Len::Len(0)),
-            Some(x) => {
-                serializer.write_array(Len::Len(1))?.serialize(x)
-            }
+            Some(x) => serializer.write_array(Len::Len(1))?.serialize(x),
         }
     }
 }
@@ -88,11 +91,15 @@ impl<T> Serialize for Option<T>
 ///
 /// i.e. the size must be known ahead of time
 ///
-pub fn serialize_fixed_map<'a, C, K, V, W>(data: C, serializer: Serializer<W>) -> Result<Serializer<W>>
-    where K: 'a + Serialize
-        , V: 'a + Serialize
-        , C: Iterator<Item = (&'a K, &'a V)> + ExactSizeIterator
-        , W: Write+Sized
+pub fn serialize_fixed_map<'a, C, K, V, W>(
+    data: C,
+    serializer: Serializer<W>,
+) -> Result<Serializer<W>>
+where
+    K: 'a + Serialize,
+    V: 'a + Serialize,
+    C: Iterator<Item = (&'a K, &'a V)> + ExactSizeIterator,
+    W: Write + Sized,
 {
     let mut serializer = serializer.write_map(Len::Len(data.len() as u64))?;
     for element in data {
@@ -106,10 +113,14 @@ pub fn serialize_fixed_map<'a, C, K, V, W>(data: C, serializer: Serializer<W>) -
 ///
 /// i.e. the size must be known ahead of time
 ///
-pub fn serialize_fixed_array<'a, C, T, W>(data: C, serializer: Serializer<W>) -> Result<Serializer<W>>
-    where T: 'a + Serialize
-        , C: Iterator<Item = &'a T> + ExactSizeIterator
-        , W: Write+Sized
+pub fn serialize_fixed_array<'a, C, T, W>(
+    data: C,
+    serializer: Serializer<W>,
+) -> Result<Serializer<W>>
+where
+    T: 'a + Serialize,
+    C: Iterator<Item = &'a T> + ExactSizeIterator,
+    W: Write + Sized,
 {
     let mut serializer = serializer.write_array(Len::Len(data.len() as u64))?;
     for element in data {
@@ -120,11 +131,15 @@ pub fn serialize_fixed_array<'a, C, T, W>(data: C, serializer: Serializer<W>) ->
 
 /// helper function to serialise a map of indefinite number of elements.
 ///
-pub fn serialize_indefinite_map<'a, C, K, V, W>(data: C, serializer: Serializer<W>) -> Result<Serializer<W>>
-    where K: 'a + Serialize
-        , V: 'a + Serialize
-        , C: Iterator<Item = (&'a K, &'a V)>
-        , W: Write+Sized
+pub fn serialize_indefinite_map<'a, C, K, V, W>(
+    data: C,
+    serializer: Serializer<W>,
+) -> Result<Serializer<W>>
+where
+    K: 'a + Serialize,
+    V: 'a + Serialize,
+    C: Iterator<Item = (&'a K, &'a V)>,
+    W: Write + Sized,
 {
     let mut serializer = serializer.write_map(Len::Indefinite)?;
     for element in data {
@@ -136,10 +151,14 @@ pub fn serialize_indefinite_map<'a, C, K, V, W>(data: C, serializer: Serializer<
 
 /// helper function to serialise a collection of T as a indefinite number of element
 ///
-pub fn serialize_indefinite_array<'a, C, T, W>(data: C, serializer: Serializer<W>) -> Result<Serializer<W>>
-    where T: 'a + Serialize
-        , C: Iterator<Item = &'a T>
-        , W: Write+Sized
+pub fn serialize_indefinite_array<'a, C, T, W>(
+    data: C,
+    serializer: Serializer<W>,
+) -> Result<Serializer<W>>
+where
+    T: 'a + Serialize,
+    C: Iterator<Item = &'a T>,
+    W: Write + Sized,
 {
     let mut serializer = serializer.write_array(Len::Indefinite)?;
     for element in data {
@@ -164,8 +183,9 @@ pub fn serialize_indefinite_array<'a, C, T, W>(data: C, serializer: Serializer<W
 /// ```
 ///
 pub fn serialize_cbor_in_cbor<T, W>(data: T, serializer: Serializer<W>) -> Result<Serializer<W>>
-    where T: Serialize
-        , W: Write+Sized
+where
+    T: Serialize,
+    W: Write + Sized,
 {
     serializer.write_bytes(&Serialize::serialize(&data, Serializer::new_vec())?.finalize())
 }
@@ -174,13 +194,13 @@ pub fn serialize_cbor_in_cbor<T, W>(data: T, serializer: Serializer<W>) -> Resul
 // at the beginning of the serialisation process as Vec grows by 2, starting from a
 // small or an empty serializer will only increase the number of realloc called at
 // every _reserve_ calls.
-const DEFAULT_CAPACITY : usize = 512;
+const DEFAULT_CAPACITY: usize = 512;
 
 /// simple CBOR serializer into any
 /// [`std::io::Write`](https://doc.rust-lang.org/std/io/trait.Write.html).
 ///
 #[derive(Debug)]
-pub struct Serializer<W: Write+Sized>(W);
+pub struct Serializer<W: Write + Sized>(W);
 impl Serializer<Vec<u8>> {
     /// create a new serializer.
     ///
@@ -190,12 +210,16 @@ impl Serializer<Vec<u8>> {
     /// let serializer = Serializer::new_vec();
     /// ```
     #[inline]
-    pub fn new_vec() -> Self { Serializer::new(Vec::with_capacity(DEFAULT_CAPACITY)) }
+    pub fn new_vec() -> Self {
+        Serializer::new(Vec::with_capacity(DEFAULT_CAPACITY))
+    }
 }
 
-impl<W: Write+Sized> Serializer<W> {
+impl<W: Write + Sized> Serializer<W> {
     #[inline]
-    pub fn new(w: W) -> Self { Serializer(w) }
+    pub fn new(w: W) -> Self {
+        Serializer(w)
+    }
 
     /// finalize the serializer, returning the serializer bytes
     ///
@@ -209,7 +233,9 @@ impl<W: Write+Sized> Serializer<W> {
     /// # assert!(bytes.is_empty());
     /// ```
     #[inline]
-    pub fn finalize(self) -> W { self.0 }
+    pub fn finalize(self) -> W {
+        self.0
+    }
 
     #[inline]
     fn write_u8(mut self, value: u8) -> Result<Self> {
@@ -219,22 +245,20 @@ impl<W: Write+Sized> Serializer<W> {
 
     #[inline]
     fn write_u16(mut self, value: u16) -> Result<Self> {
-        self.0.write_all(
-            &[ ((value & 0xFF_00) >> 8) as u8
-             , ((value & 0x00_FF)     ) as u8
-             ][..]
-        )?;
+        self.0
+            .write_all(&[((value & 0xFF_00) >> 8) as u8, (value & 0x00_FF) as u8][..])?;
         Ok(self)
     }
 
     #[inline]
     fn write_u32(mut self, value: u32) -> Result<Self> {
         self.0.write_all(
-            &[ ((value & 0xFF_00_00_00) >> 24) as u8
-             , ((value & 0x00_FF_00_00) >> 16) as u8
-             , ((value & 0x00_00_FF_00) >>  8) as u8
-             , ((value & 0x00_00_00_FF)      ) as u8
-             ][..]
+            &[
+                ((value & 0xFF_00_00_00) >> 24) as u8,
+                ((value & 0x00_FF_00_00) >> 16) as u8,
+                ((value & 0x00_00_FF_00) >> 8) as u8,
+                (value & 0x00_00_00_FF) as u8,
+            ][..],
         )?;
         Ok(self)
     }
@@ -242,15 +266,16 @@ impl<W: Write+Sized> Serializer<W> {
     #[inline]
     fn write_u64(mut self, value: u64) -> Result<Self> {
         self.0.write_all(
-            &[ ((value & 0xFF_00_00_00_00_00_00_00) >> 56) as u8
-             , ((value & 0x00_FF_00_00_00_00_00_00) >> 48) as u8
-             , ((value & 0x00_00_FF_00_00_00_00_00) >> 40) as u8
-             , ((value & 0x00_00_00_FF_00_00_00_00) >> 32) as u8
-             , ((value & 0x00_00_00_00_FF_00_00_00) >> 24) as u8
-             , ((value & 0x00_00_00_00_00_FF_00_00) >> 16) as u8
-             , ((value & 0x00_00_00_00_00_00_FF_00) >>  8) as u8
-             , ((value & 0x00_00_00_00_00_00_00_FF)      ) as u8
-             ][..]
+            &[
+                ((value & 0xFF_00_00_00_00_00_00_00) >> 56) as u8,
+                ((value & 0x00_FF_00_00_00_00_00_00) >> 48) as u8,
+                ((value & 0x00_00_FF_00_00_00_00_00) >> 40) as u8,
+                ((value & 0x00_00_00_FF_00_00_00_00) >> 32) as u8,
+                ((value & 0x00_00_00_00_FF_00_00_00) >> 24) as u8,
+                ((value & 0x00_00_00_00_00_FF_00_00) >> 16) as u8,
+                ((value & 0x00_00_00_00_00_00_FF_00) >> 8) as u8,
+                (value & 0x00_00_00_00_00_00_00_FF) as u8,
+            ][..],
         )?;
         Ok(self)
     }
@@ -307,7 +332,7 @@ impl<W: Write+Sized> Serializer<W> {
     /// # assert_eq!(bytes, [0x2b].as_ref());
     /// ```
     pub fn write_negative_integer(self, value: i64) -> Result<Self> {
-        self.write_type(Type::NegativeInteger, (- value - 1) as u64)
+        self.write_type(Type::NegativeInteger, (-value - 1) as u64)
     }
 
     /// write the given object as bytes
@@ -325,7 +350,10 @@ impl<W: Write+Sized> Serializer<W> {
     pub fn write_bytes<B: AsRef<[u8]>>(self, bytes: B) -> Result<Self> {
         let bytes = bytes.as_ref();
         self.write_type(Type::Bytes, bytes.len() as u64)
-            .and_then(|mut s| { s.0.write_all(bytes)?; Ok(s) })
+            .and_then(|mut s| {
+                s.0.write_all(bytes)?;
+                Ok(s)
+            })
     }
 
     /// write the given object as text
@@ -343,7 +371,10 @@ impl<W: Write+Sized> Serializer<W> {
     pub fn write_text<S: AsRef<str>>(self, text: S) -> Result<Self> {
         let bytes = text.as_ref().as_bytes();
         self.write_type(Type::Text, bytes.len() as u64)
-            .and_then(|mut s| { s.0.write_all(bytes)?; Ok(s) })
+            .and_then(|mut s| {
+                s.0.write_all(bytes)?;
+                Ok(s)
+            })
     }
 
     /// start to write an array
@@ -388,7 +419,7 @@ impl<W: Write+Sized> Serializer<W> {
     pub fn write_array(self, len: Len) -> Result<Self> {
         match len {
             Len::Indefinite => self.write_u8(Type::Array.to_byte(0x1f)),
-            Len::Len(len)   => self.write_type(Type::Array, len as u64),
+            Len::Len(len) => self.write_type(Type::Array, len as u64),
         }
     }
 
@@ -442,7 +473,7 @@ impl<W: Write+Sized> Serializer<W> {
     pub fn write_map(self, len: Len) -> Result<Self> {
         match len {
             Len::Indefinite => self.write_u8(Type::Map.to_byte(0x1f)),
-            Len::Len(len)   => self.write_type(Type::Map, len as u64),
+            Len::Len(len) => self.write_type(Type::Map, len as u64),
         }
     }
 
@@ -496,26 +527,26 @@ impl<W: Write+Sized> Serializer<W> {
     /// ```
     pub fn write_special(self, special: Special) -> Result<Self> {
         match special {
-            Special::Unassigned(v@0..=0x13) => {
-                self.write_u8(Type::Special.to_byte(v))
-            },
-            Special::Bool(false)   => self.write_u8(Type::Special.to_byte(0x14)),
-            Special::Bool(true)    => self.write_u8(Type::Special.to_byte(0x15)),
-            Special::Null          => self.write_u8(Type::Special.to_byte(0x16)),
-            Special::Undefined     => self.write_u8(Type::Special.to_byte(0x17)),
-            Special::Unassigned(v) => {
-                self.write_u8(Type::Special.to_byte(0x18))
-                    .and_then(|s| s.write_u8(v))
-            },
-            Special::Float(f)      => {
-                unimplemented!("we currently do not support floating point serialisation, cannot serialize: {}", f)
-            },
-            Special::Break         => self.write_u8(Type::Special.to_byte(0x1f)),
+            Special::Unassigned(v @ 0..=0x13) => self.write_u8(Type::Special.to_byte(v)),
+            Special::Bool(false) => self.write_u8(Type::Special.to_byte(0x14)),
+            Special::Bool(true) => self.write_u8(Type::Special.to_byte(0x15)),
+            Special::Null => self.write_u8(Type::Special.to_byte(0x16)),
+            Special::Undefined => self.write_u8(Type::Special.to_byte(0x17)),
+            Special::Unassigned(v) => self
+                .write_u8(Type::Special.to_byte(0x18))
+                .and_then(|s| s.write_u8(v)),
+            Special::Float(f) => unimplemented!(
+                "we currently do not support floating point serialisation, cannot serialize: {}",
+                f
+            ),
+            Special::Break => self.write_u8(Type::Special.to_byte(0x1f)),
         }
     }
 
     /// Convenient member function to chain serialisation
-    pub fn serialize<T: Serialize>(self, t: &T) -> Result<Self> { Serialize::serialize(t, self) }
+    pub fn serialize<T: Serialize>(self, t: &T) -> Result<Self> {
+        Serialize::serialize(t, self)
+    }
 }
 
 #[cfg(test)]
@@ -525,7 +556,8 @@ mod test {
     #[test]
     fn unsigned_integer_0() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_unsigned_integer(0x12)
+        let serializer = serializer
+            .write_unsigned_integer(0x12)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x12].as_ref());
@@ -534,7 +566,8 @@ mod test {
     #[test]
     fn unsigned_integer_1() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_unsigned_integer(0x20)
+        let serializer = serializer
+            .write_unsigned_integer(0x20)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x18, 0x20].as_ref());
@@ -543,7 +576,8 @@ mod test {
     #[test]
     fn unsigned_integer_2() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_unsigned_integer(0x2021)
+        let serializer = serializer
+            .write_unsigned_integer(0x2021)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x19, 0x20, 0x21].as_ref());
@@ -552,7 +586,8 @@ mod test {
     #[test]
     fn unsigned_integer_3() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_unsigned_integer(0x20212223)
+        let serializer = serializer
+            .write_unsigned_integer(0x20212223)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x1a, 0x20, 0x21, 0x22, 0x23].as_ref());
@@ -561,16 +596,21 @@ mod test {
     #[test]
     fn unsigned_integer_4() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_unsigned_integer(0x2021222324252627)
+        let serializer = serializer
+            .write_unsigned_integer(0x2021222324252627)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
-        assert_eq!(bytes, [0x1b, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27].as_ref());
+        assert_eq!(
+            bytes,
+            [0x1b, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27].as_ref()
+        );
     }
 
     #[test]
     fn negative_integer_0() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_negative_integer(-12)
+        let serializer = serializer
+            .write_negative_integer(-12)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x2b].as_ref());
@@ -579,7 +619,8 @@ mod test {
     #[test]
     fn negative_integer_1() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_negative_integer(-200)
+        let serializer = serializer
+            .write_negative_integer(-200)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x38, 0xc7].as_ref());
@@ -588,7 +629,8 @@ mod test {
     #[test]
     fn negative_integer_2() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_negative_integer(-13201)
+        let serializer = serializer
+            .write_negative_integer(-13201)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x39, 0x33, 0x90].as_ref());
@@ -597,7 +639,8 @@ mod test {
     #[test]
     fn negative_integer_3() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_negative_integer(-13201782)
+        let serializer = serializer
+            .write_negative_integer(-13201782)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x3a, 0x00, 0xc9, 0x71, 0x75].as_ref());
@@ -606,16 +649,21 @@ mod test {
     #[test]
     fn negative_integer_4() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_negative_integer(-9902201782)
+        let serializer = serializer
+            .write_negative_integer(-9902201782)
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
-        assert_eq!(bytes, [0x3b, 0x00, 0x00, 0x00, 0x02, 0x4E, 0x37, 0x9B, 0xB5].as_ref());
+        assert_eq!(
+            bytes,
+            [0x3b, 0x00, 0x00, 0x00, 0x02, 0x4E, 0x37, 0x9B, 0xB5].as_ref()
+        );
     }
 
     #[test]
     fn bytes_0() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_bytes(&vec![])
+        let serializer = serializer
+            .write_bytes(&vec![])
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x40].as_ref());
@@ -624,7 +672,8 @@ mod test {
     #[test]
     fn bytes_1() {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_bytes(&vec![0b101010])
+        let serializer = serializer
+            .write_bytes(&vec![0b101010])
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x41, 0b101010].as_ref());
@@ -632,7 +681,8 @@ mod test {
 
     fn test_special(cbor_type: Special, result: &[u8]) -> bool {
         let serializer = Serializer::new_vec();
-        let serializer = serializer.write_special(cbor_type)
+        let serializer = serializer
+            .write_special(cbor_type)
             .expect("serialize a special");
         let bytes = serializer.finalize();
         println!("serializing: {:?}", cbor_type);

@@ -1,6 +1,6 @@
-use std::{ops::{Deref}};
-use result::Result;
 use error::Error;
+use result::Result;
+use std::ops::Deref;
 
 /// CBOR Major Types
 ///
@@ -13,7 +13,7 @@ pub enum Type {
     Array,
     Map,
     Tag,
-    Special
+    Special,
 }
 impl Type {
     pub fn to_byte(self, len: u8) -> u8 {
@@ -22,12 +22,12 @@ impl Type {
         len | match self {
             Type::UnsignedInteger => 0b0000_0000,
             Type::NegativeInteger => 0b0010_0000,
-            Type::Bytes           => 0b0100_0000,
-            Type::Text            => 0b0110_0000,
-            Type::Array           => 0b1000_0000,
-            Type::Map             => 0b1010_0000,
-            Type::Tag             => 0b1100_0000,
-            Type::Special         => 0b1110_0000
+            Type::Bytes => 0b0100_0000,
+            Type::Text => 0b0110_0000,
+            Type::Array => 0b1000_0000,
+            Type::Map => 0b1010_0000,
+            Type::Tag => 0b1100_0000,
+            Type::Special => 0b1110_0000,
         }
     }
     pub fn from_byte(byte: u8) -> Type {
@@ -40,12 +40,14 @@ impl Type {
             0b1010_0000 => Type::Map,
             0b1100_0000 => Type::Tag,
             0b1110_0000 => Type::Special,
-            _           => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
 impl From<u8> for Type {
-    fn from(byte: u8) -> Type { Type::from_byte(byte) }
+    fn from(byte: u8) -> Type {
+        Type::from_byte(byte)
+    }
 }
 
 /// Raw bytes as a slice of given length of the original buffer.
@@ -74,15 +76,25 @@ impl<'a> Bytes<'a> {
     /// handy function to explicitely access the underlying slice
     /// but bound to the original lifetime, not the lifetime of
     /// the `Bytes` itself.
-    pub fn bytes<'b>(&'b self) -> &'a [u8] { self.0 }
+    pub fn bytes<'b>(&'b self) -> &'a [u8] {
+        self.0
+    }
 }
-impl<'a> From<&'a [u8]> for Bytes<'a> { fn from(v: &'a[u8]) -> Self { Bytes(v) } }
+impl<'a> From<&'a [u8]> for Bytes<'a> {
+    fn from(v: &'a [u8]) -> Self {
+        Bytes(v)
+    }
+}
 impl<'a> Deref for Bytes<'a> {
     type Target = [u8];
-    fn deref(&self) -> &Self::Target { self.0 }
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
 }
 impl<'a> AsRef<[u8]> for Bytes<'a> {
-    fn as_ref(&self) -> &[u8] { self.0.as_ref() }
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
 }
 
 /// CBOR special (as in Special Primary Type).
@@ -99,14 +111,17 @@ pub enum Special {
     #[warn()]
     Float(f64),
     /// mark the stop of a given indefinite-length item
-    Break
+    Break,
 }
 impl Special {
     #[inline]
     pub fn unwrap_bool(&self) -> Result<bool> {
         match self {
             Special::Bool(b) => Ok(*b),
-            _                => Err(Error::CustomError(format!("Expected Special::Bool, received {:?}", self)))
+            _ => Err(Error::CustomError(format!(
+                "Expected Special::Bool, received {:?}",
+                self
+            ))),
         }
     }
 
@@ -114,7 +129,10 @@ impl Special {
     pub fn unwrap_null(&self) -> Result<()> {
         match self {
             Special::Null => Ok(()),
-            _             => Err(Error::CustomError(format!("Expected Special::Null, received {:?}", self)))
+            _ => Err(Error::CustomError(format!(
+                "Expected Special::Null, received {:?}",
+                self
+            ))),
         }
     }
 
@@ -122,7 +140,10 @@ impl Special {
     pub fn unwrap_undefined(&self) -> Result<()> {
         match self {
             Special::Undefined => Ok(()),
-            _                  => Err(Error::CustomError(format!("Expected Special::Undefined, received {:?}", self)))
+            _ => Err(Error::CustomError(format!(
+                "Expected Special::Undefined, received {:?}",
+                self
+            ))),
         }
     }
 
@@ -130,7 +151,10 @@ impl Special {
     pub fn unwrap_unassigned(&self) -> Result<u8> {
         match self {
             Special::Unassigned(v) => Ok(*v),
-            _                      => Err(Error::CustomError(format!("Expected Special::Unassigned, received {:?}", self)))
+            _ => Err(Error::CustomError(format!(
+                "Expected Special::Unassigned, received {:?}",
+                self
+            ))),
         }
     }
 
@@ -138,7 +162,10 @@ impl Special {
     pub fn unwrap_float(&self) -> Result<f64> {
         match self {
             Special::Float(f) => Ok(*f),
-            _                 => Err(Error::CustomError(format!("Expected Special::Float, received {:?}", self)))
+            _ => Err(Error::CustomError(format!(
+                "Expected Special::Float, received {:?}",
+                self
+            ))),
         }
     }
 
@@ -146,11 +173,13 @@ impl Special {
     pub fn unwrap_break(&self) -> Result<()> {
         match self {
             Special::Break => Ok(()),
-            _              => Err(Error::CustomError(format!("Expected Special::Break, received {:?}", self)))
+            _ => Err(Error::CustomError(format!(
+                "Expected Special::Break, received {:?}",
+                self
+            ))),
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -159,14 +188,18 @@ mod tests {
     #[test]
     fn major_type_byte_encoding() {
         for i in 0b0000_0000..=0b0001_1111 {
-            assert!(Type::UnsignedInteger == Type::from_byte(Type::to_byte(Type::UnsignedInteger, i)));
-            assert!(Type::NegativeInteger == Type::from_byte(Type::to_byte(Type::NegativeInteger, i)));
-            assert!(Type::Bytes           == Type::from_byte(Type::to_byte(Type::Bytes,           i)));
-            assert!(Type::Text            == Type::from_byte(Type::to_byte(Type::Text,            i)));
-            assert!(Type::Array           == Type::from_byte(Type::to_byte(Type::Array,           i)));
-            assert!(Type::Map             == Type::from_byte(Type::to_byte(Type::Map,             i)));
-            assert!(Type::Tag             == Type::from_byte(Type::to_byte(Type::Tag,             i)));
-            assert!(Type::Special         == Type::from_byte(Type::to_byte(Type::Special,         i)));
+            assert!(
+                Type::UnsignedInteger == Type::from_byte(Type::to_byte(Type::UnsignedInteger, i))
+            );
+            assert!(
+                Type::NegativeInteger == Type::from_byte(Type::to_byte(Type::NegativeInteger, i))
+            );
+            assert!(Type::Bytes == Type::from_byte(Type::to_byte(Type::Bytes, i)));
+            assert!(Type::Text == Type::from_byte(Type::to_byte(Type::Text, i)));
+            assert!(Type::Array == Type::from_byte(Type::to_byte(Type::Array, i)));
+            assert!(Type::Map == Type::from_byte(Type::to_byte(Type::Map, i)));
+            assert!(Type::Tag == Type::from_byte(Type::to_byte(Type::Tag, i)));
+            assert!(Type::Special == Type::from_byte(Type::to_byte(Type::Special, i)));
         }
     }
 }

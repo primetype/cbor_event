@@ -1,12 +1,12 @@
 //! CBOR deserialisation tooling
 
-use std::{self, fmt, ops::{Deref}, collections::BTreeMap};
 use error::Error;
-use result::Result;
-use types::{Type, Special, Bytes};
 use len::Len;
+use result::Result;
+use std::{self, collections::BTreeMap, fmt, ops::Deref};
+use types::{Bytes, Special, Type};
 
-pub trait Deserialize : Sized {
+pub trait Deserialize: Sized {
     /// method to implement to deserialise an object from the given
     /// `RawCbor`.
     fn deserialize<'a>(&mut RawCbor<'a>) -> Result<Self>;
@@ -79,8 +79,8 @@ impl<T: Deserialize> Deserialize for Vec<T> {
                         vec.push(Deserialize::deserialize(raw)?);
                         true
                     }
-                } {};
-            },
+                } {}
+            }
             Len::Len(len) => {
                 for _ in 0..len {
                     vec.push(Deserialize::deserialize(raw)?);
@@ -90,7 +90,7 @@ impl<T: Deserialize> Deserialize for Vec<T> {
         Ok(vec)
     }
 }
-impl<K: Deserialize+Ord, V: Deserialize> Deserialize for BTreeMap<K,V> {
+impl<K: Deserialize + Ord, V: Deserialize> Deserialize for BTreeMap<K, V> {
     fn deserialize<'a>(raw: &mut RawCbor<'a>) -> Result<Self> {
         let len = raw.map()?;
         let mut vec = BTreeMap::new();
@@ -108,8 +108,8 @@ impl<K: Deserialize+Ord, V: Deserialize> Deserialize for BTreeMap<K,V> {
                         vec.insert(k, v);
                         true
                     }
-                } {};
-            },
+                } {}
+            }
             Len::Len(len) => {
                 for _ in 0..len {
                     let k = Deserialize::deserialize(raw)?;
@@ -127,7 +127,10 @@ impl<T: Deserialize> Deserialize for Option<T> {
         match raw.array()? {
             Len::Len(0) => Ok(None),
             Len::Len(1) => Ok(Some(raw.deserialize()?)),
-            len => Err(Error::CustomError(format!("Invalid Option<T>: received array of {:?} elements", len)))
+            len => Err(Error::CustomError(format!(
+                "Invalid Option<T>: received array of {:?} elements",
+                len
+            ))),
         }
     }
 }
@@ -249,7 +252,7 @@ impl<'a> RawCbor<'a> {
     fn get(&self, index: usize) -> Result<u8> {
         match self.0.get(index) {
             None => Err(Error::NotEnough(self.len(), index)),
-            Some(b) => Ok(*b)
+            Some(b) => Ok(*b),
         }
     }
     #[inline]
@@ -346,19 +349,19 @@ impl<'a> RawCbor<'a> {
     ///
     #[inline]
     pub fn cbor_len(&self) -> Result<(Len, usize)> {
-        let b : u8 = self.get(0)? & 0b0001_1111;
+        let b: u8 = self.get(0)? & 0b0001_1111;
         match b {
-            0x00..=0x17 => { Ok((Len::Len(b as u64), 0)) },
-            0x18        => { self.u8(1).map(|v| (Len::Len(v), 1)) },
-            0x19        => { self.u16(1).map(|v| (Len::Len(v), 2)) },
-            0x1a        => { self.u32(1).map(|v| (Len::Len(v), 4)) },
-            0x1b        => { self.u64(1).map(|v| (Len::Len(v), 8)) },
+            0x00..=0x17 => Ok((Len::Len(b as u64), 0)),
+            0x18 => self.u8(1).map(|v| (Len::Len(v), 1)),
+            0x19 => self.u16(1).map(|v| (Len::Len(v), 2)),
+            0x1a => self.u32(1).map(|v| (Len::Len(v), 4)),
+            0x1b => self.u64(1).map(|v| (Len::Len(v), 8)),
             0x1c..=0x1e => Err(Error::UnknownLenType(b)),
-            0x1f        => Ok((Len::Indefinite, 0)),
+            0x1f => Ok((Len::Indefinite, 0)),
 
             // since the value `b` has been masked to only consider the first 5 lowest bits
             // all value above 0x1f are unreachable.
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -432,9 +435,9 @@ impl<'a> RawCbor<'a> {
         let (len, len_sz) = self.cbor_len()?;
         match len {
             Len::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::NegativeInteger)),
-            Len::Len(v)     => {
+            Len::Len(v) => {
                 self.advance(1 + len_sz)?;
-                Ok(- (v as i64) - 1)
+                Ok(-(v as i64) - 1)
             }
         }
     }
@@ -460,7 +463,7 @@ impl<'a> RawCbor<'a> {
             Len::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::Bytes)),
             Len::Len(len) => {
                 let start = 1 + len_sz;
-                let end   = start + len as usize;
+                let end = start + len as usize;
                 let bytes = Bytes::from(&self.0[start..end as usize]);
                 self.advance(end)?;
                 Ok(bytes)
@@ -491,7 +494,7 @@ impl<'a> RawCbor<'a> {
             Len::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::Text)),
             Len::Len(len) => {
                 let start = 1 + len_sz;
-                let end   = start + len as usize;
+                let end = start + len as usize;
                 let bytes = &self.0[start..end as usize];
                 let text = String::from_utf8(Vec::from(bytes))?;
                 self.advance(end)?;
@@ -521,7 +524,7 @@ impl<'a> RawCbor<'a> {
     pub fn array(&mut self) -> Result<Len> {
         self.cbor_expect_type(Type::Array)?;
         let (len, sz) = self.cbor_len()?;
-        self.advance(1+sz)?;
+        self.advance(1 + sz)?;
         Ok(len)
     }
 
@@ -554,7 +557,7 @@ impl<'a> RawCbor<'a> {
     pub fn map(&mut self) -> Result<Len> {
         self.cbor_expect_type(Type::Map)?;
         let (len, sz) = self.cbor_len()?;
-        self.advance(1+sz)?;
+        self.advance(1 + sz)?;
         Ok(len)
     }
 
@@ -581,7 +584,7 @@ impl<'a> RawCbor<'a> {
         match self.cbor_len()? {
             (Len::Indefinite, _) => Err(Error::IndefiniteLenNotSupported(Type::Tag)),
             (Len::Len(len), sz) => {
-                self.advance(1+sz)?;
+                self.advance(1 + sz)?;
                 Ok(len)
             }
         }
@@ -599,18 +602,55 @@ impl<'a> RawCbor<'a> {
         self.cbor_expect_type(Type::Special)?;
         let b = self.get(0)? & 0b0001_1111;
         match b {
-            0x00..=0x13 => { self.advance(1)?; Ok(Special::Unassigned(b)) },
-            0x14        => { self.advance(1)?; Ok(Special::Bool(false)) },
-            0x15        => { self.advance(1)?; Ok(Special::Bool(true)) },
-            0x16        => { self.advance(1)?; Ok(Special::Null) },
-            0x17        => { self.advance(1)?; Ok(Special::Undefined) },
-            0x18        => { let b = self.u8(1)?;  self.advance(2)?; Ok(Special::Unassigned(b as u8)) },
-            0x19        => { let f = self.u16(1)?; self.advance(3)?; Ok(Special::Float(f as f64)) },
-            0x1a        => { let f = self.u32(1)?; self.advance(5)?; Ok(Special::Float(f as f64)) },
-            0x1b        => { let f = self.u64(1)?; self.advance(9)?; Ok(Special::Float(f as f64)) },
-            0x1c..=0x1e => { self.advance(1)?; Ok(Special::Unassigned(b)) },
-            0x1f        => { self.advance(1)?; Ok(Special::Break) },
-            _           => unreachable!()
+            0x00..=0x13 => {
+                self.advance(1)?;
+                Ok(Special::Unassigned(b))
+            }
+            0x14 => {
+                self.advance(1)?;
+                Ok(Special::Bool(false))
+            }
+            0x15 => {
+                self.advance(1)?;
+                Ok(Special::Bool(true))
+            }
+            0x16 => {
+                self.advance(1)?;
+                Ok(Special::Null)
+            }
+            0x17 => {
+                self.advance(1)?;
+                Ok(Special::Undefined)
+            }
+            0x18 => {
+                let b = self.u8(1)?;
+                self.advance(2)?;
+                Ok(Special::Unassigned(b as u8))
+            }
+            0x19 => {
+                let f = self.u16(1)?;
+                self.advance(3)?;
+                Ok(Special::Float(f as f64))
+            }
+            0x1a => {
+                let f = self.u32(1)?;
+                self.advance(5)?;
+                Ok(Special::Float(f as f64))
+            }
+            0x1b => {
+                let f = self.u64(1)?;
+                self.advance(9)?;
+                Ok(Special::Float(f as f64))
+            }
+            0x1c..=0x1e => {
+                self.advance(1)?;
+                Ok(Special::Unassigned(b))
+            }
+            0x1f => {
+                self.advance(1)?;
+                Ok(Special::Break)
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -619,7 +659,8 @@ impl<'a> RawCbor<'a> {
     }
 
     pub fn deserialize<T>(&mut self) -> Result<T>
-        where T: Deserialize
+    where
+        T: Deserialize,
     {
         Deserialize::deserialize(self)
     }
@@ -627,10 +668,11 @@ impl<'a> RawCbor<'a> {
     /// Deserialize a value of type `T` and check that there is no
     /// trailing data.
     pub fn deserialize_complete<T>(&mut self) -> Result<T>
-        where T: Deserialize
+    where
+        T: Deserialize,
     {
         let v = self.deserialize()?;
-        if ! self.is_empty() {
+        if !self.is_empty() {
             Err(Error::TrailingData)
         } else {
             Ok(v)
@@ -638,20 +680,30 @@ impl<'a> RawCbor<'a> {
     }
 }
 impl<'a> From<&'a [u8]> for RawCbor<'a> {
-    fn from(bytes: &'a [u8]) -> RawCbor<'a> { RawCbor(bytes) }
+    fn from(bytes: &'a [u8]) -> RawCbor<'a> {
+        RawCbor(bytes)
+    }
 }
 impl<'a> From<&'a Vec<u8>> for RawCbor<'a> {
-    fn from(bytes: &'a Vec<u8>) -> RawCbor<'a> { RawCbor(bytes.as_slice()) }
+    fn from(bytes: &'a Vec<u8>) -> RawCbor<'a> {
+        RawCbor(bytes.as_slice())
+    }
 }
 impl<'a, 'b> From<&'b Bytes<'a>> for RawCbor<'a> {
-    fn from(bytes: &'b Bytes<'a>) -> RawCbor<'a> { RawCbor(bytes.bytes()) }
+    fn from(bytes: &'b Bytes<'a>) -> RawCbor<'a> {
+        RawCbor(bytes.bytes())
+    }
 }
 impl<'a> AsRef<[u8]> for RawCbor<'a> {
-    fn as_ref(&self) -> &[u8] { self.0 }
+    fn as_ref(&self) -> &[u8] {
+        self.0
+    }
 }
 impl<'a> Deref for RawCbor<'a> {
     type Target = [u8];
-    fn deref(& self) -> &Self::Target { self.0 }
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
 }
 
 #[cfg(test)]
@@ -670,7 +722,10 @@ mod test {
 
     #[test]
     fn bytes() {
-        let vec = vec![0x52, 0x73, 0x6F, 0x6D, 0x65, 0x20, 0x72, 0x61, 0x6E, 0x64, 0x6F, 0x6D, 0x20, 0x73, 0x74, 0x72, 0x69, 0x6E, 0x67];
+        let vec = vec![
+            0x52, 0x73, 0x6F, 0x6D, 0x65, 0x20, 0x72, 0x61, 0x6E, 0x64, 0x6F, 0x6D, 0x20, 0x73,
+            0x74, 0x72, 0x69, 0x6E, 0x67,
+        ];
         let mut raw = RawCbor::from(&vec);
 
         let bytes = raw.bytes().unwrap();
@@ -706,13 +761,13 @@ mod test {
 
     #[test]
     fn array() {
-        let vec = vec![0x86, 0,1,2,3,4,5];
+        let vec = vec![0x86, 0, 1, 2, 3, 4, 5];
         let mut raw = RawCbor::from(&vec);
 
         let len = raw.array().unwrap();
 
         assert_eq!(len, Len::Len(6));
-        assert_eq!(&*raw, &[0,1,2,3,4,5][..]);
+        assert_eq!(&*raw, &[0, 1, 2, 3, 4, 5][..]);
 
         assert_eq!(0, raw.unsigned_integer().unwrap());
         assert_eq!(1, raw.unsigned_integer().unwrap());
@@ -750,7 +805,10 @@ mod test {
 
     #[test]
     fn complex_array() {
-        let vec = vec![0x85, 0x64, 0x69, 0x6F, 0x68, 0x6B, 0x01, 0x20, 0x84, 0, 1, 2, 3, 0x10, /* garbage... */ 0, 1, 2, 3, 4, 5, 6];
+        let vec = vec![
+            0x85, 0x64, 0x69, 0x6F, 0x68, 0x6B, 0x01, 0x20, 0x84, 0, 1, 2, 3, 0x10,
+            /* garbage... */ 0, 1, 2, 3, 4, 5, 6,
+        ];
         let mut raw = RawCbor::from(&vec);
 
         let len = raw.array().unwrap();
@@ -770,7 +828,7 @@ mod test {
 
         assert_eq!(0x10, raw.unsigned_integer().unwrap());
 
-        const GARBAGE_LEN : usize = 7;
+        const GARBAGE_LEN: usize = 7;
         assert_eq!(GARBAGE_LEN, raw.len());
     }
 
@@ -790,7 +848,7 @@ mod test {
 
         let k = raw.unsigned_integer().unwrap();
         let v = raw.unsigned_integer().unwrap();
-        assert_eq!(1,  k);
+        assert_eq!(1, k);
         assert_eq!(42, v);
     }
 
@@ -806,7 +864,10 @@ mod test {
 
     #[test]
     fn tag() {
-        const CBOR : &'static [u8] = &[0xD8, 0x18, 0x52, 0x73, 0x6F, 0x6D, 0x65, 0x20, 0x72, 0x61, 0x6E, 0x64, 0x6F, 0x6D, 0x20, 0x73, 0x74, 0x72, 0x69, 0x6E, 0x67];
+        const CBOR: &'static [u8] = &[
+            0xD8, 0x18, 0x52, 0x73, 0x6F, 0x6D, 0x65, 0x20, 0x72, 0x61, 0x6E, 0x64, 0x6F, 0x6D,
+            0x20, 0x73, 0x74, 0x72, 0x69, 0x6E, 0x67,
+        ];
         let mut raw = RawCbor::from(CBOR);
 
         let tag = raw.tag().unwrap();
@@ -818,7 +879,10 @@ mod test {
 
     #[test]
     fn tag2() {
-        const CBOR : &'static [u8] = &[0x82, 0xd8, 0x18, 0x53, 0x52, 0x73, 0x6f, 0x6d, 0x65, 0x20, 0x72, 0x61, 0x6e, 0x64, 0x6f, 0x6d, 0x20, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x1a, 0x71, 0xad, 0x58, 0x36];
+        const CBOR: &'static [u8] = &[
+            0x82, 0xd8, 0x18, 0x53, 0x52, 0x73, 0x6f, 0x6d, 0x65, 0x20, 0x72, 0x61, 0x6e, 0x64,
+            0x6f, 0x6d, 0x20, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x1a, 0x71, 0xad, 0x58, 0x36,
+        ];
         let mut raw = RawCbor::from(CBOR);
 
         let len = raw.array().unwrap();
