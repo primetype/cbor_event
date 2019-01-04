@@ -1,105 +1,59 @@
-# Based on the "trust" template v0.1.2
-# https://github.com/japaric/trust/tree/v0.1.2
-
-dist: trusty
 language: rust
-services: docker
-sudo: required
+sudo: false
+cache: cargo
 
-# TODO Rust builds on stable by default, this can be
-# overridden on a case by case basis down below.
-
-env:
-  global:
-    - CRATE_NAME=cbor_event
+stages:
+  - name: pre-conditions
+  - name: test
+  - name: post-conditions
 
 matrix:
+  fast_finish: true
+
   include:
-    # Android
-    # - env: TARGET=aarch64-linux-android DISABLE_TESTS=1
-    # - env: TARGET=arm-linux-androideabi DISABLE_TESTS=1
-    # - env: TARGET=armv7-linux-androideabi DISABLE_TESTS=1
-    # - env: TARGET=i686-linux-android DISABLE_TESTS=1
-    # - env: TARGET=x86_64-linux-android DISABLE_TESTS=1
-
-    # iOS
-    # - env: TARGET=aarch64-apple-ios DISABLE_TESTS=1
-    #   os: osx
-    # - env: TARGET=armv7-apple-ios DISABLE_TESTS=1
-    #   os: osx
-    # - env: TARGET=armv7s-apple-ios DISABLE_TESTS=1
-    #   os: osx
-    # - env: TARGET=i386-apple-ios DISABLE_TESTS=1
-    #   os: osx
-    # - env: TARGET=x86_64-apple-ios DISABLE_TESTS=1
-    #   os: osx
-
-    # Linux
-    # - env: TARGET=aarch64-unknown-linux-gnu
-    # - env: TARGET=arm-unknown-linux-gnueabi
-    # - env: TARGET=armv7-unknown-linux-gnueabihf
-    # - env: TARGET=i686-unknown-linux-gnu
-    # - env: TARGET=i686-unknown-linux-musl
-    # - env: TARGET=mips-unknown-linux-gnu
-    # - env: TARGET=mips64-unknown-linux-gnuabi64
-    # - env: TARGET=mips64el-unknown-linux-gnuabi64
-    # - env: TARGET=mipsel-unknown-linux-gnu
-    # - env: TARGET=powerpc-unknown-linux-gnu
-    # - env: TARGET=powerpc64-unknown-linux-gnu
-    # - env: TARGET=powerpc64le-unknown-linux-gnu
-    # - env: TARGET=s390x-unknown-linux-gnu DISABLE_TESTS=1
-    # - env: TARGET=x86_64-unknown-linux-gnu # already running as stable channel
-    # - env: TARGET=x86_64-unknown-linux-musl
-
-    # OSX
-    # - env: TARGET=i686-apple-darwin
-    #   os: osx
-    - env: TARGET=x86_64-apple-darwin
-      os: osx
-
-    # *BSD
-    # - env: TARGET=i686-unknown-freebsd DISABLE_TESTS=1
-    # - env: TARGET=x86_64-unknown-freebsd DISABLE_TESTS=1
-    # - env: TARGET=x86_64-unknown-netbsd DISABLE_TESTS=1
-
-    # Windows
-    #- env: TARGET=x86_64-pc-windows-gnu
-
-    # Bare metal
-    # These targets don't support std and as such are likely not suitable for
-    # most crates.
-    # - env: TARGET=thumbv6m-none-eabi
-    # - env: TARGET=thumbv7em-none-eabi
-    # - env: TARGET=thumbv7em-none-eabihf
-    # - env: TARGET=thumbv7m-none-eabi
-
-    # *WASM
-    - env: TARGET=wasm32-unknown-unknown DISABLE_TESTS=1
-
-    # Testing other channels
-    - env: TARGET=x86_64-unknown-linux-gnu
-      rust: 1.29.0
-    - env: TARGET=x86_64-unknown-linux-gnu
+    - name: stable (osx)
       rust: stable
-    - env: TARGET=x86_64-unknown-linux-gnu
-      rust: beta
-    - env: TARGET=x86_64-unknown-linux-gnu
+      os: osx
+    - name: 1.29 (linux)
+      rust: 1.29
+      os: linux
+    - name: stable release (linux)
+      rust: stable
+      os: linux
+      script:
+        - cargo test --release
+    - name: stable (linux)
+      rust: stable
+      os: linux
+    - name: nightly (linux)
       rust: nightly
+      os: linux
 
-before_install:
-  - set -e
-  - rustup self update
-
-install:
-  - sh .ci/install.sh
-  - source ~/.cargo/env || true
+    - name: cargo clippy
+      stage: pre-conditions
+      rust: nightly
+      script:
+        - if rustup component add clippy-preview;
+          then
+            cargo clippy --all -- -Drust-2018-idioms;
+          else
+            echo 'Skipping clippy';
+          fi
+    - name: rustfmt
+      stage: pre-conditions
+      rust: nightly
+      script:
+        - if rustup component add rustfmt;
+          then
+            cargo fmt --all -- --check;
+          else
+            echo 'Skipping rustfmt';
+          fi
 
 script:
-  - bash .ci/script.sh
+  - cargo test
 
-after_script: set +e
+notifications:
+  email:
+    on_success: never
 
-cache: cargo
-before_cache:
-  # Travis can't cache files that are not readable by "others"
-  - chmod -R a+r $HOME/.cargo

@@ -44,7 +44,7 @@ impl From<::std::io::Error> for Error {
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Error::*;
         match self {
             ExpectedU8 => write!(f, "Invalid cbor: expected 8bit long unsigned integer"),
@@ -95,7 +95,7 @@ impl fmt::Display for Error {
 }
 
 impl error::Error for Error {
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         match self {
             Error::IoError(ref error) => Some(error),
             Error::InvalidTextError(ref error) => Some(error),

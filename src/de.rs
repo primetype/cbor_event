@@ -240,7 +240,7 @@ impl<T: Deserialize> Deserialize for Option<T> {
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct RawCbor<'a>(&'a [u8]);
 impl<'a> fmt::Display for RawCbor<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for i in self.iter() {
             write!(f, "{:02x}", i)?;
         }
