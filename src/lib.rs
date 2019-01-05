@@ -58,6 +58,10 @@
 //! # assert_eq!(bytes, [0x2b].as_ref());
 //! ```
 
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck;
+
 pub mod de;
 mod error;
 mod len;

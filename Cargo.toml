@@ -11,3 +11,6 @@ homepage = "https://github.com/primetype/cbor_event#readme.md"
 description = """
 The CBOR Event library. There are no dependencies, all platforms are supported and it is wasm compatible.
 """
+
+[dev-dependencies]
+quickcheck = "0.7"

@@ -1,4 +1,6 @@
 use error::Error;
+#[cfg(test)]
+use quickcheck::{Arbitrary, Gen};
 use result::Result;
 use std::ops::Deref;
 
@@ -177,6 +179,21 @@ impl Special {
                 "Expected Special::Break, received {:?}",
                 self
             ))),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for Special {
+    fn arbitrary<G: Gen>(g: &mut G) -> Self {
+        match u8::arbitrary(g) % 6 {
+            0 => Special::Bool(Arbitrary::arbitrary(g)),
+            1 => Special::Null,
+            2 => Special::Undefined,
+            3 => Special::Unassigned(Arbitrary::arbitrary(g)),
+            4 => Special::Null, // TODO: Float...
+            5 => Special::Break,
+            _ => unreachable!(),
         }
     }
 }

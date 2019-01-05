@@ -18,6 +18,9 @@ use types::{Special, Type};
 
 use std::{collections::BTreeMap, io::Write};
 
+#[cfg(test)]
+use quickcheck::{Arbitrary, Gen};
+
 /// CBOR Object key, represents the possible supported values for
 /// a CBOR key in a CBOR Map.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -192,6 +195,99 @@ impl Deserialize for Value {
 }
 
 #[cfg(test)]
+impl Arbitrary for ObjectKey {
+    fn arbitrary<G: Gen>(g: &mut G) -> Self {
+        match u8::arbitrary(g) % 3 {
+            0 => ObjectKey::Integer(Arbitrary::arbitrary(g)),
+            1 => ObjectKey::Bytes(Arbitrary::arbitrary(g)),
+            2 => ObjectKey::Text(Arbitrary::arbitrary(g)),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(test)]
+fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
+    match u8::arbitrary(g) % 5 {
+        0 => Value::U64(Arbitrary::arbitrary(g)),
+        1 => Value::I64(Arbitrary::arbitrary(g)),
+        2 => Value::Bytes(Arbitrary::arbitrary(g)),
+        3 => Value::Text(Arbitrary::arbitrary(g)),
+        4 => Value::Special(Arbitrary::arbitrary(g)),
+        _ => unreachable!(),
+    }
+}
+
+#[cfg(test)]
+fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
+    if counter == 0 {
+        arbitrary_value_finite(g)
+    } else {
+        match u8::arbitrary(g) % 5 {
+            0 => Value::U64(u64::arbitrary(g)),
+            1 => Value::I64(i64::arbitrary(g)),
+            2 => Value::Bytes(Arbitrary::arbitrary(g)),
+            3 => Value::Text(Arbitrary::arbitrary(g)),
+            4 => {
+                let size = usize::arbitrary(g);
+                Value::Array(
+                    std::iter::repeat_with(|| arbitrary_value_indefinite(counter - 1, g))
+                        .take(size)
+                        .collect(),
+                )
+            }
+            5 => {
+                let size = usize::arbitrary(g);
+                Value::IArray(
+                    std::iter::repeat_with(|| arbitrary_value_indefinite(counter - 1, g))
+                        .take(size)
+                        .collect(),
+                )
+            }
+            6 => {
+                let size = usize::arbitrary(g);
+                Value::Object(
+                    std::iter::repeat_with(|| {
+                        (
+                            ObjectKey::arbitrary(g),
+                            arbitrary_value_indefinite(counter - 1, g),
+                        )
+                    })
+                    .take(size)
+                    .collect(),
+                )
+            }
+            7 => {
+                let size = usize::arbitrary(g);
+                Value::IObject(
+                    std::iter::repeat_with(|| {
+                        (
+                            ObjectKey::arbitrary(g),
+                            arbitrary_value_indefinite(counter - 1, g),
+                        )
+                    })
+                    .take(size)
+                    .collect(),
+                )
+            }
+            8 => Value::Tag(
+                u64::arbitrary(g),
+                arbitrary_value_indefinite(counter - 1, g).into(),
+            ),
+            9 => Value::Special(Arbitrary::arbitrary(g)),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for Value {
+    fn arbitrary<G: Gen>(g: &mut G) -> Self {
+        arbitrary_value_indefinite(3, g)
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::super::test_encode_decode;
     use super::*;
@@ -264,5 +360,11 @@ mod test {
         assert!(
             test_encode_decode(&Value::Tag(0x1ff, Box::new(Value::Bytes(vec![0; 624])))).unwrap()
         );
+    }
+
+    quickcheck! {
+        fn property_encode_decode(value: Value) -> bool {
+            test_encode_decode(&value).unwrap()
+        }
     }
 }
