@@ -1,6 +1,6 @@
 //! # CBOR event library
 //!
-//! [`RawCbor`]: ./de/struct.RawCbor.html
+//! [`Deserializer`]: ./de/struct.Deserializer.html
 //! [`Deserialize`]: ./de/trait.Deserialize.html
 //! [`Serializer`]: ./se/struct.Serializer.html
 //! [`Serialize`]: ./se/trait.Serialize.html
@@ -20,11 +20,11 @@
 //! - Tag;
 //! - Specials (`bool`, `null`... **except floating points**).
 //!
-//! ## Raw deserialisation: [`RawCbor`]
+//! ## Raw deserialisation: [`Deserializer`]
 //!
-//! Deserialisation works by consuming a `RawCbor` content. To avoid
+//! Deserialisation works by consuming a `Deserializer` content. To avoid
 //! performance issues some objects use a reference to the original
-//! source [`RawCbor`] internal buffer. They are then linked to the object
+//! source [`Deserializer`] internal buffer. They are then linked to the object
 //! by an associated lifetime, this is true for `Bytes`.
 //!
 //! ```

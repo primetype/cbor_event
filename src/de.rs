@@ -8,7 +8,7 @@ use types::{Special, Type};
 
 pub trait Deserialize: Sized {
     /// method to implement to deserialise an object from the given
-    /// `RawCbor`.
+    /// `Deserializer`.
     fn deserialize<R: BufRead>(reader: &mut Deserializer<R>) -> Result<Self>;
 }
 
@@ -143,7 +143,7 @@ impl<T: Deserialize> Deserialize for Option<T> {
 /// [`cbor_len`]: #method.cbor_len
 /// [`Len`]: ../enum.Len.html
 ///
-/// `RawCbor` represents a chunk of bytes believed to be cbor object.
+/// `Deserializer` represents a chunk of bytes believed to be cbor object.
 /// The validity of the cbor bytes is known only when trying
 /// to get meaningful cbor objects from it.
 ///
@@ -177,7 +177,7 @@ impl<T: Deserialize> Deserialize for Option<T> {
 ///
 /// # Error
 ///
-/// When deserialising from `RawCbor` it is possible to see the following
+/// When deserialising from `Deserializer` it is possible to see the following
 /// [`Error`]s:
 ///
 /// - `Error::NotEnough(current_size, needed_size)`: meaning we are expecting
@@ -241,7 +241,7 @@ impl<R: BufRead> Deserializer<R> {
         Ok(b1 << 56 | b2 << 48 | b3 << 40 | b4 << 32 | b5 << 24 | b6 << 16 | b7 << 8 | b8)
     }
 
-    /// function to extract the type of the given `RawCbor`.
+    /// function to extract the type of the given `Deserializer`.
     ///
     /// This function does not consume the underlying buffer.
     ///
@@ -328,9 +328,9 @@ impl<R: BufRead> Deserializer<R> {
         Ok(self.0.consume(len))
     }
 
-    /// Read an `UnsignedInteger` from the `RawCbor`
+    /// Read an `UnsignedInteger` from the `Deserializer`
     ///
-    /// The function fails if the type of the given RawCbor is not `Type::UnsignedInteger`.
+    /// The function fails if the type of the given Deserializer is not `Type::UnsignedInteger`.
     ///
     /// # Example
     ///
@@ -368,9 +368,9 @@ impl<R: BufRead> Deserializer<R> {
         }
     }
 
-    /// Read a `NegativeInteger` from the `RawCbor`
+    /// Read a `NegativeInteger` from the `Deserializer`
     ///
-    /// The function fails if the type of the given RawCbor is not `Type::NegativeInteger`.
+    /// The function fails if the type of the given Deserializer is not `Type::NegativeInteger`.
     ///
     /// # Example
     ///
@@ -397,9 +397,9 @@ impl<R: BufRead> Deserializer<R> {
         }
     }
 
-    /// Read a Bytes from the RawCbor
+    /// Read a Bytes from the Deserializer
     ///
-    /// The function fails if the type of the given RawCbor is not `Type::Bytes`.
+    /// The function fails if the type of the given Deserializer is not `Type::Bytes`.
     ///
     /// # Example
     ///
@@ -426,9 +426,9 @@ impl<R: BufRead> Deserializer<R> {
         }
     }
 
-    /// Read a Text from the RawCbor
+    /// Read a Text from the Deserializer
     ///
-    /// The function fails if the type of the given RawCbor is not `Type::Text`.
+    /// The function fails if the type of the given Deserializer is not `Type::Text`.
     ///
     /// # Example
     ///
@@ -460,7 +460,7 @@ impl<R: BufRead> Deserializer<R> {
 
     /// cbor array of cbor objects
     ///
-    /// The function fails if the type of the given RawCbor is not `Type::Array`.
+    /// The function fails if the type of the given Deserializer is not `Type::Array`.
     ///
     /// # Example
     ///
@@ -494,7 +494,7 @@ impl<R: BufRead> Deserializer<R> {
 
     /// cbor map
     ///
-    /// The function fails if the type of the given RawCbor is not `Type::Map`.
+    /// The function fails if the type of the given Deserializer is not `Type::Map`.
     ///
     /// # Example
     ///
@@ -519,7 +519,7 @@ impl<R: BufRead> Deserializer<R> {
 
     /// Cbor Tag
     ///
-    /// The function fails if the type of the given RawCbor is not `Type::Tag`.
+    /// The function fails if the type of the given Deserializer is not `Type::Tag`.
     ///
     /// # Example
     ///

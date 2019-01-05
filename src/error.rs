@@ -21,7 +21,7 @@ pub enum Error {
     /// element is the expected type, the second is the current type.
     Expected(Type, Type),
     ExpectedSetTag,
-    /// this may happens when deserialising a [`RawCbor`](../de/struct.RawCbor.html);
+    /// this may happens when deserialising a [`Deserializer`](../de/struct.Deserializer.html);
     UnknownLenType(u8),
     IndefiniteLenNotSupported(Type),
     WrongLen(u64, len::Len, &'static str),
