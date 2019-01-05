@@ -43,7 +43,10 @@ impl ObjectKey {
     }
 }
 impl Serialize for ObjectKey {
-    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<'se, W: Write + Sized>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> Result<&'se mut Serializer<W>> {
         match self {
             ObjectKey::Integer(ref v) => serializer.write_unsigned_integer(*v),
             ObjectKey::Bytes(ref v) => serializer.write_bytes(v),
@@ -86,37 +89,40 @@ pub enum Value {
 }
 
 impl Serialize for Value {
-    fn serialize<W: Write + Sized>(&self, serializer: Serializer<W>) -> Result<Serializer<W>> {
+    fn serialize<'se, W: Write + Sized>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> Result<&'se mut Serializer<W>> {
         match self {
             Value::U64(ref v) => serializer.write_unsigned_integer(*v),
             Value::I64(ref v) => serializer.write_negative_integer(*v),
             Value::Bytes(ref v) => serializer.write_bytes(v),
             Value::Text(ref v) => serializer.write_text(v),
             Value::Array(ref v) => {
-                let mut serializer = serializer.write_array(Len::Len(v.len() as u64))?;
+                serializer.write_array(Len::Len(v.len() as u64))?;
                 for element in v {
-                    serializer = serializer.serialize(element)?;
+                    serializer.serialize(element)?;
                 }
                 Ok(serializer)
             }
             Value::IArray(ref v) => {
-                let mut serializer = serializer.write_array(Len::Indefinite)?;
+                serializer.write_array(Len::Indefinite)?;
                 for element in v {
-                    serializer = serializer.serialize(element)?;
+                    serializer.serialize(element)?;
                 }
                 serializer.write_special(Special::Break)
             }
             Value::Object(ref v) => {
-                let mut serializer = serializer.write_map(Len::Len(v.len() as u64))?;
+                serializer.write_map(Len::Len(v.len() as u64))?;
                 for element in v {
-                    serializer = serializer.serialize(element.0)?.serialize(element.1)?;
+                    serializer.serialize(element.0)?.serialize(element.1)?;
                 }
                 Ok(serializer)
             }
             Value::IObject(ref v) => {
-                let mut serializer = serializer.write_map(Len::Indefinite)?;
+                serializer.write_map(Len::Indefinite)?;
                 for element in v {
-                    serializer = serializer.serialize(element.0)?.serialize(element.1)?;
+                    serializer.serialize(element.0)?.serialize(element.1)?;
                 }
                 serializer.write_special(Special::Break)
             }

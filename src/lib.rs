@@ -51,8 +51,8 @@
 //! ```
 //! use cbor_event::se::{Serializer};
 //!
-//! let serializer = Serializer::new_vec();
-//! let serializer = serializer.write_negative_integer(-12)
+//! let mut serializer = Serializer::new_vec();
+//! serializer.write_negative_integer(-12)
 //!     .expect("write a negative integer");
 //!
 //! # let bytes = serializer.finalize();
@@ -92,7 +92,9 @@ const CBOR_PAYLOAD_LENGTH_U64: u8 = 27;
 /// [`Deserialize`](./de/trait.Deserialize.html).
 ///
 pub fn test_encode_decode<V: Sized + PartialEq + Serialize + Deserialize>(v: &V) -> Result<bool> {
-    let bytes = Serialize::serialize(v, se::Serializer::new_vec())?.finalize();
+    let mut se = se::Serializer::new_vec();
+    v.serialize(&mut se)?;
+    let bytes = se.finalize();
 
     let mut raw = de::Deserializer::from(std::io::Cursor::new(bytes));
     let v_ = Deserialize::deserialize(&mut raw)?;
