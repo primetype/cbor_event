@@ -16,7 +16,10 @@ use result::Result;
 use se::*;
 use types::{Special, Type};
 
-use std::{collections::BTreeMap, io::Write};
+use std::{
+    collections::BTreeMap,
+    io::{BufRead, Write},
+};
 
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
@@ -49,7 +52,7 @@ impl Serialize for ObjectKey {
     }
 }
 impl Deserialize for ObjectKey {
-    fn deserialize<R: std::io::BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(ObjectKey::Integer(raw.unsigned_integer()?)),
             Type::Bytes => Ok(ObjectKey::Bytes(raw.bytes()?)),
@@ -123,7 +126,7 @@ impl Serialize for Value {
     }
 }
 impl Deserialize for Value {
-    fn deserialize<R: std::io::BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(Value::U64(raw.unsigned_integer()?)),
             Type::NegativeInteger => Ok(Value::I64(raw.negative_integer()?)),
@@ -220,6 +223,8 @@ fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
 
 #[cfg(test)]
 fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
+    use std::iter::repeat_with;
+
     if counter == 0 {
         arbitrary_value_finite(g)
     } else {
@@ -231,7 +236,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
             4 => {
                 let size = usize::arbitrary(g);
                 Value::Array(
-                    std::iter::repeat_with(|| arbitrary_value_indefinite(counter - 1, g))
+                    repeat_with(|| arbitrary_value_indefinite(counter - 1, g))
                         .take(size)
                         .collect(),
                 )
@@ -239,7 +244,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
             5 => {
                 let size = usize::arbitrary(g);
                 Value::IArray(
-                    std::iter::repeat_with(|| arbitrary_value_indefinite(counter - 1, g))
+                    repeat_with(|| arbitrary_value_indefinite(counter - 1, g))
                         .take(size)
                         .collect(),
                 )
@@ -247,7 +252,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
             6 => {
                 let size = usize::arbitrary(g);
                 Value::Object(
-                    std::iter::repeat_with(|| {
+                    repeat_with(|| {
                         (
                             ObjectKey::arbitrary(g),
                             arbitrary_value_indefinite(counter - 1, g),
@@ -260,7 +265,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
             7 => {
                 let size = usize::arbitrary(g);
                 Value::IObject(
-                    std::iter::repeat_with(|| {
+                    repeat_with(|| {
                         (
                             ObjectKey::arbitrary(g),
                             arbitrary_value_indefinite(counter - 1, g),
