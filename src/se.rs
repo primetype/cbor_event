@@ -258,6 +258,16 @@ impl Serializer<Vec<u8>> {
 }
 
 impl<W: Write + Sized> Serializer<W> {
+    /// extend the serializer with the given bytes
+    ///
+    /// This is not encoding the given bytes in the CBOR format. More a way
+    /// to add already CBOR encoded data or to add any bytes that may suite
+    /// your protocol.
+    pub fn write_raw_bytes(&mut self, bytes: &[u8]) -> Result<&mut Self> {
+        self.0.write_all(bytes)?;
+        Ok(self)
+    }
+
     #[inline]
     pub fn new(w: W) -> Self {
         Serializer(w)
