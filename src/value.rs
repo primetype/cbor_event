@@ -49,10 +49,10 @@ impl Serialize for ObjectKey {
     }
 }
 impl Deserialize for ObjectKey {
-    fn deserialize<'a>(raw: &mut RawCbor<'a>) -> Result<Self> {
+    fn deserialize<R: std::io::BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(ObjectKey::Integer(raw.unsigned_integer()?)),
-            Type::Bytes => Ok(ObjectKey::Bytes(Vec::from(raw.bytes()?.as_ref()))),
+            Type::Bytes => Ok(ObjectKey::Bytes(raw.bytes()?)),
             Type::Text => Ok(ObjectKey::Text(raw.text()?)),
             t => Err(Error::CustomError(format!(
                 "Type `{:?}' is not a support type for CBOR Map's key",
@@ -123,11 +123,11 @@ impl Serialize for Value {
     }
 }
 impl Deserialize for Value {
-    fn deserialize<'a>(raw: &mut RawCbor<'a>) -> Result<Self> {
+    fn deserialize<R: std::io::BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(Value::U64(raw.unsigned_integer()?)),
             Type::NegativeInteger => Ok(Value::I64(raw.negative_integer()?)),
-            Type::Bytes => Ok(Value::Bytes(Vec::from(raw.bytes()?.as_ref()))),
+            Type::Bytes => Ok(Value::Bytes(raw.bytes()?)),
             Type::Text => Ok(Value::Text(raw.text()?)),
             Type::Array => {
                 let len = raw.array()?;

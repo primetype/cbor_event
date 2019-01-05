@@ -29,12 +29,13 @@
 //!
 //! ```
 //! use cbor_event::de::*;
+//! use std::io::Cursor;
 //!
 //! let vec = vec![0x43, 0x01, 0x02, 0x03];
-//! let mut raw = RawCbor::from(&vec);
+//! let mut raw = Deserializer::from(Cursor::new(vec));
 //! let bytes = raw.bytes().unwrap();
 //!
-//! # assert_eq!(bytes.as_ref(), [1,2,3].as_ref());
+//! # assert_eq!(bytes.as_slice(), [1,2,3].as_ref());
 //! ```
 //!
 //! For convenience, we provide the trait [`Deserialize`] to help writing
@@ -93,7 +94,7 @@ const CBOR_PAYLOAD_LENGTH_U64: u8 = 27;
 pub fn test_encode_decode<V: Sized + PartialEq + Serialize + Deserialize>(v: &V) -> Result<bool> {
     let bytes = Serialize::serialize(v, se::Serializer::new_vec())?.finalize();
 
-    let mut raw = de::RawCbor::from(&bytes);
+    let mut raw = de::Deserializer::from(std::io::Cursor::new(bytes));
     let v_ = Deserialize::deserialize(&mut raw)?;
 
     Ok(v == &v_)

@@ -2,7 +2,6 @@ use error::Error;
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
 use result::Result;
-use std::ops::Deref;
 
 /// CBOR Major Types
 ///
@@ -49,53 +48,6 @@ impl Type {
 impl From<u8> for Type {
     fn from(byte: u8) -> Type {
         Type::from_byte(byte)
-    }
-}
-
-/// Raw bytes as a slice of given length of the original buffer.
-///
-/// [`Deref`]: https://doc.rust-lang.org/std/ops/trait.Deref.html
-/// [`[u8]`]: https://doc.rust-lang.org/nightly/std/primitive.slice.html
-///
-/// # Deref
-///
-/// `Bytes` implements [`Deref`]`<Target = [u8]>` and so inherits all of
-/// [`[u8]`]'s methods. In addition it means that you can pass a `Bytes` to
-/// a function which takes a [`[u8]`] by using an ampersand (`&`):
-///
-/// ```
-/// use cbor_event::{Bytes};
-/// fn take_slice(slice: &[u8]) { /* ... */ }
-///
-/// let original_source : &'static [u8] = &[0u8,1u8,2u8];
-/// let bytes = Bytes::from(original_source);
-/// take_slice(&bytes);
-/// ```
-///
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct Bytes<'a>(&'a [u8]);
-impl<'a> Bytes<'a> {
-    /// handy function to explicitely access the underlying slice
-    /// but bound to the original lifetime, not the lifetime of
-    /// the `Bytes` itself.
-    pub fn bytes<'b>(&'b self) -> &'a [u8] {
-        self.0
-    }
-}
-impl<'a> From<&'a [u8]> for Bytes<'a> {
-    fn from(v: &'a [u8]) -> Self {
-        Bytes(v)
-    }
-}
-impl<'a> Deref for Bytes<'a> {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-impl<'a> AsRef<[u8]> for Bytes<'a> {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
     }
 }
 
