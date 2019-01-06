@@ -1,6 +1,6 @@
 [package]
 name = "cbor_event"
-version = "2.1.1"
+version = "2.1.2"
 authors = ["Nicolas Di Prima <nicolas@primetype.co.uk>", "Vincent Hanquez <vincent@typed.io>"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"

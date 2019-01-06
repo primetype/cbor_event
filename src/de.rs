@@ -200,6 +200,17 @@ impl<R> From<R> for Deserializer<R> {
         Deserializer(r)
     }
 }
+impl<R> Deserializer<R> {
+    pub fn as_ref(&self) -> &R {
+        &self.0
+    }
+    pub fn as_mut_ref(&mut self) -> &mut R {
+        &mut self.0
+    }
+    pub fn inner(self) -> R {
+        self.0
+    }
+}
 impl<R: BufRead> Deserializer<R> {
     #[inline]
     fn get(&mut self, index: usize) -> Result<u8> {
