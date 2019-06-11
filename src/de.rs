@@ -650,7 +650,6 @@ impl<R: BufRead> Deserializer<R> {
 
 // deserialisation macro
 
-
 macro_rules! deserialize_array {
     ( $( $x:expr ),* ) => {
         $(
@@ -877,4 +876,3 @@ mod test {
         assert!(crc as u32 == 0x71AD5836);
     }
 }
-
