@@ -648,6 +648,44 @@ impl<R: BufRead> Deserializer<R> {
     }
 }
 
+// deserialisation macro
+
+
+macro_rules! deserialize_array {
+    ( $( $x:expr ),* ) => {
+        $(
+            impl Deserialize for [u8; $x] {
+                fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+                    let mut bytes = [0u8; $x];
+
+                    let len = raw.array()?;
+                    match len {
+                        Len::Indefinite => {
+                            return Err(Error::WrongLen($x, len, "static array"));
+                        },
+                        Len::Len(x) => {
+                            if x != $x {
+                                return Err(Error::WrongLen($x, len, "static array"));
+                            }
+                        }
+                    }
+
+                    for byte in bytes.iter_mut() {
+                        *byte = Deserialize::deserialize(raw)?;
+                    }
+                    Ok(bytes)
+                }
+            }
+        )*
+    }
+}
+
+deserialize_array!(
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64
+);
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -839,3 +877,4 @@ mod test {
         assert!(crc as u32 == 0x71AD5836);
     }
 }
+
