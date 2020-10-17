@@ -65,59 +65,23 @@ impl Deserialize for String {
 
 impl<T: Deserialize> Deserialize for Vec<T> {
     fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
-        let len = raw.array()?;
         let mut vec = Vec::new();
-        match len {
-            Len::Indefinite => {
-                while {
-                    let t = raw.cbor_type()?;
-                    if t == Type::Special {
-                        let special = raw.special()?;
-                        assert_eq!(special, Special::Break);
-                        false
-                    } else {
-                        vec.push(Deserialize::deserialize(raw)?);
-                        true
-                    }
-                } {}
-            }
-            Len::Len(len) => {
-                for _ in 0..len {
-                    vec.push(Deserialize::deserialize(raw)?);
-                }
-            }
-        }
+        raw.array_with(|raw| {
+            vec.push(Deserialize::deserialize(raw)?);
+            Ok(())
+        })?;
         Ok(vec)
     }
 }
 impl<K: Deserialize + Ord, V: Deserialize> Deserialize for BTreeMap<K, V> {
     fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
-        let len = raw.map()?;
         let mut vec = BTreeMap::new();
-        match len {
-            Len::Indefinite => {
-                while {
-                    let t = raw.cbor_type()?;
-                    if t == Type::Special {
-                        let special = raw.special()?;
-                        assert_eq!(special, Special::Break);
-                        false
-                    } else {
-                        let k = Deserialize::deserialize(raw)?;
-                        let v = Deserialize::deserialize(raw)?;
-                        vec.insert(k, v);
-                        true
-                    }
-                } {}
-            }
-            Len::Len(len) => {
-                for _ in 0..len {
-                    let k = Deserialize::deserialize(raw)?;
-                    let v = Deserialize::deserialize(raw)?;
-                    vec.insert(k, v);
-                }
-            }
-        }
+        raw.map_with(|raw| {
+            let k = Deserialize::deserialize(raw)?;
+            let v = Deserialize::deserialize(raw)?;
+            vec.insert(k, v);
+            Ok(())
+        })?;
         Ok(vec)
     }
 }
@@ -469,6 +433,28 @@ impl<R: BufRead> Deserializer<R> {
         }
     }
 
+    // Internal helper to decode a series of `len` items using a function. If
+    // `len` is indefinite, decode until a `Special::Break`. If `len` is
+    // definite, decode that many items.
+    fn internal_items_with<F>(&mut self, len: Len, mut f: F) -> Result<()>
+    where
+        F: FnMut(&mut Self) -> Result<()>,
+    {
+        match len {
+            Len::Indefinite => {
+                while !self.special_break()? {
+                    f(self)?;
+                }
+            }
+            Len::Len(len) => {
+                for _ in 0..len {
+                    f(self)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// cbor array of cbor objects
     ///
     /// The function fails if the type of the given Deserializer is not `Type::Array`.
@@ -492,6 +478,19 @@ impl<R: BufRead> Deserializer<R> {
         let (len, sz) = self.cbor_len()?;
         self.advance(1 + sz)?;
         Ok(len)
+    }
+
+    /// Helper to decode a cbor array using a specified function.
+    ///
+    /// This works with either definite or indefinite arrays. Each call to the
+    /// function should decode one item. If the function returns an error,
+    /// decoding stops and returns that error.
+    pub fn array_with<F>(&mut self, f: F) -> Result<()>
+    where
+        F: FnMut(&mut Self) -> Result<()>,
+    {
+        let len = self.array()?;
+        self.internal_items_with(len, f)
     }
 
     /// Expect an array of a specified length. Must be a definite-length array.
@@ -527,6 +526,20 @@ impl<R: BufRead> Deserializer<R> {
         self.advance(1 + sz)?;
         Ok(len)
     }
+
+    /// Helper to decode a cbor map using a specified function
+    ///
+    /// This works with either definite or indefinite maps. Each call to the
+    /// function should decode one key followed by one value. If the function
+    /// returns an error, decoding stops and returns that error.
+    pub fn map_with<F>(&mut self, f: F) -> Result<()>
+    where
+        F: FnMut(&mut Self) -> Result<()>,
+    {
+        let len = self.map()?;
+        self.internal_items_with(len, f)
+    }
+
 
     /// Cbor Tag
     ///
@@ -564,6 +577,22 @@ impl<R: BufRead> Deserializer<R> {
             return Err(Error::ExpectedSetTag);
         }
         Ok(())
+    }
+
+    /// If the next byte is a `Special::Break`, advance past it and return `true`; otherwise,
+    /// return `false` without advancing.
+    ///
+    /// Useful when decoding a variable-length array or map where the items may themselves use
+    /// `Special`, such as bool values.
+    pub fn special_break(&mut self) -> Result<bool> {
+        self.cbor_expect_type(Type::Special)?;
+        let b = self.get(0)? & 0b0001_1111;
+        if b == 0x1f {
+            self.advance(1)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn special(&mut self) -> Result<Special> {
@@ -784,6 +813,21 @@ mod test {
     }
 
     #[test]
+    fn vec_bool_definite() {
+        let vec = vec![0x83, 0xf4, 0xf5, 0xf4];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        let bools = Vec::<bool>::deserialize(&mut raw).unwrap();
+        assert_eq!(bools, &[false, true, false]);
+    }
+    #[test]
+    fn vec_bool_indefinite() {
+        let vec = vec![0x9f, 0xf4, 0xf5, 0xf4, 0xff];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        let bools = Vec::<bool>::deserialize(&mut raw).unwrap();
+        assert_eq!(bools, &[false, true, false]);
+    }
+
+    #[test]
     fn complex_array() {
         let vec = vec![
             0x85, 0x64, 0x69, 0x6F, 0x68, 0x6B, 0x01, 0x20, 0x84, 0, 1, 2, 3, 0x10,
@@ -840,6 +884,25 @@ mod test {
         let len = raw.map().unwrap();
 
         assert_eq!(len, Len::Len(0));
+    }
+
+    #[test]
+    fn btreemap_bool_definite() {
+        let vec = vec![0xa2, 0xf4, 0xf5, 0xf5, 0xf4];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        let boolmap = BTreeMap::<bool, bool>::deserialize(&mut raw).unwrap();
+        assert_eq!(boolmap.len(), 2);
+        assert_eq!(boolmap[&false], true);
+        assert_eq!(boolmap[&true], false);
+    }
+    #[test]
+    fn btreemap_bool_indefinite() {
+        let vec = vec![0xbf, 0xf4, 0xf5, 0xf5, 0xf4, 0xff];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        let boolmap = BTreeMap::<bool, bool>::deserialize(&mut raw).unwrap();
+        assert_eq!(boolmap.len(), 2);
+        assert_eq!(boolmap[&false], true);
+        assert_eq!(boolmap[&true], false);
     }
 
     #[test]
