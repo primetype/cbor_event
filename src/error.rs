@@ -29,6 +29,7 @@ pub enum Error {
     CannotParse(Type, Vec<u8>),
     IoError(::std::io::Error),
     TrailingData,
+    InvalidIndefiniteString,
 
     CustomError(String),
 }
@@ -89,6 +90,7 @@ impl fmt::Display for Error {
             ),
             IoError(_io_error) => write!(f, "Invalid cbor: I/O error"),
             TrailingData => write!(f, "Unexpected trailing data in CBOR"),
+            InvalidIndefiniteString => write!(f, "Invalid cbor: Invalid indefinite string format"),
             CustomError(err) => write!(f, "Invalid cbor: {}", err),
         }
     }

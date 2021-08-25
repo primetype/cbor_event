@@ -388,12 +388,28 @@ impl<R: BufRead> Deserializer<R> {
     /// let bytes = raw.bytes().unwrap();
     /// ```
     pub fn bytes<'a>(&'a mut self) -> Result<Vec<u8>> {
+        use std::io::Read;
+
         self.cbor_expect_type(Type::Bytes)?;
         let (len, len_sz) = self.cbor_len()?;
+        self.advance(1 + len_sz)?;
         match len {
-            Len::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::Bytes)),
+            Len::Indefinite => {
+                let mut bytes = vec![];
+                while self.cbor_type()? != Type::Special || !self.special_break()? {
+                    self.cbor_expect_type(Type::Bytes)?;
+                    let (chunk_len, chunk_len_sz) = self.cbor_len()?;
+                    match chunk_len {
+                        Len::Indefinite => return Err(Error::InvalidIndefiniteString),
+                        Len::Len(len) => {
+                            self.advance(1 + chunk_len_sz)?;
+                            self.0.by_ref().take(len).read_to_end(&mut bytes)?;
+                        }
+                    }
+                }
+                Ok(bytes)
+            }
             Len::Len(len) => {
-                self.advance(1 + len_sz)?;
                 let mut bytes = vec![0; len as usize];
                 self.0.read_exact(&mut bytes)?;
                 Ok(bytes)
@@ -421,10 +437,29 @@ impl<R: BufRead> Deserializer<R> {
     pub fn text(&mut self) -> Result<String> {
         self.cbor_expect_type(Type::Text)?;
         let (len, len_sz) = self.cbor_len()?;
+        self.advance(1 + len_sz)?;
         match len {
-            Len::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::Text)),
+            Len::Indefinite => {
+                let mut text = String::new();
+                while self.cbor_type()? != Type::Special || !self.special_break()? {
+                    self.cbor_expect_type(Type::Text)?;
+                    let (chunk_len, chunk_len_sz) = self.cbor_len()?;
+                    match chunk_len {
+                        Len::Indefinite => return Err(Error::InvalidIndefiniteString),
+                        Len::Len(len) => {
+                            // rfc7049 forbids splitting UTF-8 characters across chunks so we must
+                            // read each chunk separately as a definite encoded UTF-8 string
+                            self.advance(1 + chunk_len_sz)?;
+                            let mut bytes = vec![0; len as usize];
+                            self.0.read_exact(&mut bytes)?;
+                            let chunk_text = String::from_utf8(bytes)?;
+                            text.push_str(&chunk_text);
+                        }
+                    }
+                }
+                Ok(text)
+            }
             Len::Len(len) => {
-                self.advance(1 + len_sz)?;
                 let mut bytes = vec![0; len as usize];
                 self.0.read_exact(&mut bytes)?;
                 let text = String::from_utf8(bytes)?;
@@ -539,7 +574,6 @@ impl<R: BufRead> Deserializer<R> {
         let len = self.map()?;
         self.internal_items_with(len, f)
     }
-
 
     /// Cbor Tag
     ///
@@ -741,6 +775,28 @@ mod test {
         assert_eq!(&vec[1..], &*bytes);
     }
     #[test]
+    fn bytes_indefinite() {
+        let chunks = vec![
+            vec![
+                0x52, 0x73, 0x6F, 0x6D, 0x65, 0x20, 0x72, 0x61, 0x6E, 0x64, 0x6F, 0x6D, 0x20, 0x73,
+                0x74, 0x72, 0x69, 0x6E, 0x67,
+            ],
+            vec![0x44, 0x01, 0x02, 0x03, 0x04],
+        ];
+        let mut expected = Vec::new();
+        for chunk in chunks.iter() {
+            expected.extend_from_slice(&chunk[1..]);
+        }
+        let mut vec = vec![0x5f];
+        for mut chunk in chunks {
+            vec.append(&mut chunk);
+        }
+        vec.push(0xff);
+        let mut raw = Deserializer::from(Cursor::new(vec.clone()));
+        let found = raw.bytes().unwrap();
+        assert_eq!(found, expected);
+    }
+    #[test]
     fn bytes_empty() {
         let vec = vec![0x40];
         let mut raw = Deserializer::from(Cursor::new(vec));
@@ -757,6 +813,19 @@ mod test {
         let text = raw.text().unwrap();
 
         assert_eq!(&text, "text");
+    }
+    #[test]
+    fn text_indefinite() {
+        let chunks = vec![vec![0x64, 0x49, 0x45, 0x54, 0x46], vec![0x61, 0x61]];
+        let expected = "IETFa";
+        let mut vec = vec![0x7f];
+        for mut chunk in chunks {
+            vec.append(&mut chunk);
+        }
+        vec.push(0xff);
+        let mut raw = Deserializer::from(Cursor::new(vec.clone()));
+        let found = raw.text().unwrap();
+        assert_eq!(found, expected);
     }
     #[test]
     fn text_empty() {
