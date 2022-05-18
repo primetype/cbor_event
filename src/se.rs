@@ -340,17 +340,7 @@ impl<W: Write + Sized> Serializer<W> {
     #[inline]
     fn write_type_definite(&mut self, cbor_type: Type, len: u64, sz: Option<Sz>) -> Result<&mut Self> {
         let extra_sz = match sz {
-            None => if len <= super::MAX_INLINE_ENCODING {
-                Sz::Inline
-            } else if len < 0x1_00 {
-                Sz::One
-            } else if len < 0x1_00_00 {
-                Sz::Two
-            } else if len < 0x1_00_00_00_00 {
-                Sz::Four
-            } else {
-                Sz::Eight
-            },
+            None => Sz::canonical(len),
             Some(sz) => {
                 let fits = match sz {
                     Sz::Inline => len <= super::MAX_INLINE_ENCODING,

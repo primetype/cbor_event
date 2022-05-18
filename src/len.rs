@@ -40,6 +40,20 @@ pub enum Sz {
 }
 
 impl Sz {
+    pub fn canonical(len: u64) -> Self {
+        if len <= super::MAX_INLINE_ENCODING {
+            Sz::Inline
+        } else if len < 0x1_00 {
+            Sz::One
+        } else if len < 0x1_00_00 {
+            Sz::Two
+        } else if len < 0x1_00_00_00_00 {
+            Sz::Four
+        } else {
+            Sz::Eight
+        }
+    }
+
     pub fn bytes_following(&self) -> usize {
         match self {
             Self::Inline => 0,
