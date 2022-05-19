@@ -62,7 +62,6 @@ pub enum Special {
 
     /// Float is not fully supported in this library and it is advised
     /// to avoid using it for now.
-    #[warn()]
     Float(f64),
     /// mark the stop of a given indefinite-length item
     Break,

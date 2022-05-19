@@ -6,10 +6,7 @@ pub enum Len {
 }
 impl Len {
     pub fn is_null(&self) -> bool {
-        match self {
-            Len::Len(0) => true,
-            _ => false,
-        }
+        matches!(self, Self::Len(0))
     }
     pub fn non_null(self) -> Option<Self> {
         if self.is_null() {

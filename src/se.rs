@@ -998,7 +998,7 @@ mod test {
                 0x5b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xBE, 0xEF,
             ],
         ];
-        let mut expected_bytes: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        let mut expected_bytes: Vec<u8> = def_parts.iter().flatten().cloned().collect();
         // also make an indefinite encoded one out all the definite-encoded parts
         expected_bytes.push(0x5F);
         for slice in def_parts.iter() {
@@ -1047,7 +1047,7 @@ mod test {
                 0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x41, 0x42, 0x43,
             ],
         ];
-        let mut expected_bytes: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        let mut expected_bytes: Vec<u8> = def_parts.iter().flatten().cloned().collect();
         // also make an indefinite encoded one out all the definite-encoded parts
         expected_bytes.push(0x7F);
         for slice in def_parts.iter() {

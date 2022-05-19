@@ -164,10 +164,14 @@ impl<R> From<R> for Deserializer<R> {
         Deserializer(r)
     }
 }
-impl<R> Deserializer<R> {
-    pub fn as_ref(&self) -> &R {
+
+impl<R> AsRef<R> for Deserializer<R> {
+    fn as_ref(&self) -> &R {
         &self.0
     }
+}
+
+impl<R> Deserializer<R> {
     pub fn as_mut_ref(&mut self) -> &mut R {
         &mut self.0
     }
@@ -322,7 +326,9 @@ impl<R: BufRead> Deserializer<R> {
     /// then lost, they cannot be retrieved for future references.
     #[inline]
     pub fn advance(&mut self, len: usize) -> Result<()> {
-        Ok(self.0.consume(len))
+        self.0.consume(len);
+
+        Ok(())
     }
 
     /// Read an `UnsignedInteger` from the `Deserializer`
@@ -433,14 +439,14 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// let bytes = raw.bytes().unwrap();
     /// ```
-    pub fn bytes<'a>(&'a mut self) -> Result<Vec<u8>> {
+    pub fn bytes(&mut self) -> Result<Vec<u8>> {
         Ok(self.bytes_sz()?.0)
     }
 
     /// Read a Bytes from the Deserializer with encoding information
     ///
     /// Same as `bytes` but also returns `StringLenSz` for details about the encoding used.
-    pub fn bytes_sz<'a>(&'a mut self) -> Result<(Vec<u8>, StringLenSz)> {
+    pub fn bytes_sz(&mut self) -> Result<(Vec<u8>, StringLenSz)> {
         use std::io::Read;
 
         self.cbor_expect_type(Type::Bytes)?;
@@ -796,7 +802,7 @@ impl<R: BufRead> Deserializer<R> {
         T: Deserialize,
     {
         let v = self.deserialize()?;
-        if self.0.fill_buf()?.len() > 0 {
+        if !self.0.fill_buf()?.is_empty() {
             Err(Error::TrailingData)
         } else {
             Ok(v)
@@ -842,6 +848,7 @@ deserialize_array!(
 );
 
 #[cfg(test)]
+#[allow(clippy::bool_assert_comparison)]
 mod test {
     use super::*;
     use std::io::Cursor;
@@ -1014,7 +1021,7 @@ mod test {
 
         assert_eq!(0x10, raw.unsigned_integer().unwrap());
 
-        const GARBAGE_LEN: usize = 7;
+        // const GARBAGE_LEN: usize = 7;
         // assert_eq!(GARBAGE_LEN, raw.len());
     }
 
@@ -1140,7 +1147,7 @@ mod test {
                 0x5b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xBE, 0xEF,
             ],
         ];
-        let mut vec: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        let mut vec: Vec<u8> = def_parts.iter().flatten().cloned().collect();
         // also make an indefinite encoded one out all the definite-encoded parts
         vec.push(0x5F);
         for slice in def_parts.iter() {
@@ -1198,7 +1205,7 @@ mod test {
                 0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x41, 0x42, 0x43,
             ],
         ];
-        let mut vec: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        let mut vec: Vec<u8> = def_parts.iter().flatten().cloned().collect();
         // also make an indefinite encoded one out all the definite-encoded parts
         vec.push(0x7F);
         for slice in def_parts.iter() {
