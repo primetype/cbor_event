@@ -25,13 +25,9 @@ rustup target add aarch64-apple-ios # or any target below
 | `arm-linux-androideabi`              |   ✓    |
 | `armv7-unknown-linux-gnueabihf`      |   ✓    |
 | `armv7-linux-androideabi`            |   ✓    |
-| `armv7-apple-ios`                    |   ✓    |
-| `armv7s-apple-ios`                   |   ✓    |
 | `i686-unknown-linux-gnu`             |   ✓    |
 | `i686-unknown-linux-musl`            |   ✓    |
 | `i686-unknown-freebsd`               |   ✓    |
-| `i686-apple-ios`                     |   ✓    |
-| `i686-apple-darwin`                  |   ✓    |
 | `i686-linux-android`                 |   ✓    |
 | `x86_64-unknown-linux-gnu`           |   ✓    |
 | `x86_64-unknown-linux-musl`          |   ✓    |
