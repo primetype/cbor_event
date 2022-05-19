@@ -66,7 +66,7 @@ impl Sz {
 }
 
 /// CBOR length with encoding details
-/// 
+///
 /// Definite lengths can be encoded using a variable amount of bytes
 /// see `Sz` for more information
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -85,10 +85,10 @@ impl LenSz {
 }
 
 /// Encoding for the length of a string (text or bytes)
-/// 
+///
 /// Indefinite encoding strings contain the indefinite marker followed
 /// by a series of definite encoded strings and then a break
-/// 
+///
 /// Definite encoding strings can vary by how many bytes are used to encode
 /// the length e.g. 4 can be represented inline in the type, or in 1/2/4/8
 /// additional bytes
