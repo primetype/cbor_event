@@ -1,7 +1,7 @@
 //! CBOR deserialisation tooling
 
 use error::Error;
-use len::Len;
+use len::{Len, LenSz, StringLenSz, Sz};
 use result::Result;
 use std::{self, collections::BTreeMap, io::BufRead};
 use types::{Special, Type};
@@ -246,7 +246,7 @@ impl<R: BufRead> Deserializer<R> {
         }
     }
 
-    /// function to extract the get the length parameter of
+    /// function to extract the length parameter of
     /// the given cbor object. The returned tuple contains
     ///
     /// [`Type`]: ../enum.Type.html
@@ -296,6 +296,28 @@ impl<R: BufRead> Deserializer<R> {
         }
     }
 
+    /// function to extract the length parameter of
+    /// the given cbor object as well as the encoding details of the length.
+    /// 
+    /// [`LenSz`]: ../enum.LenSz.html
+    #[inline]
+    pub fn cbor_len_sz(&mut self) -> Result<LenSz> {
+        let b: u8 = self.get(0)? & 0b0001_1111;
+        match b {
+            0x00..=0x17 => Ok(LenSz::Len(b as u64, Sz::Inline)),
+            0x18 => self.u8(1).map(|v| LenSz::Len(v, Sz::One)),
+            0x19 => self.u16(1).map(|v| LenSz::Len(v, Sz::Two)),
+            0x1a => self.u32(1).map(|v| LenSz::Len(v, Sz::Four)),
+            0x1b => self.u64(1).map(|v| LenSz::Len(v, Sz::Eight)),
+            0x1c..=0x1e => Err(Error::UnknownLenType(b)),
+            0x1f => Ok(LenSz::Indefinite),
+
+            // since the value `b` has been masked to only consider the first 5 lowest bits
+            // all value above 0x1f are unreachable.
+            _ => unreachable!(),
+        }
+    }
+
     /// consume the given `len` from the underlying buffer. Skipped bytes are
     /// then lost, they cannot be retrieved for future references.
     #[inline]
@@ -332,13 +354,20 @@ impl<R: BufRead> Deserializer<R> {
     /// let integer = raw.unsigned_integer().unwrap();
     /// ```
     pub fn unsigned_integer(&mut self) -> Result<u64> {
+        Ok(self.unsigned_integer_sz()?.0)
+    }
+
+    /// Read an `UnsignedInteger` from the `Deserializer` with encoding information
+    ///
+    /// Same as `unsigned_integer` but returns the `Sz` (bytes used) in the encoding
+    pub fn unsigned_integer_sz(&mut self) -> Result<(u64, Sz)> {
         self.cbor_expect_type(Type::UnsignedInteger)?;
-        let (len, len_sz) = self.cbor_len()?;
-        match len {
-            Len::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::UnsignedInteger)),
-            Len::Len(v) => {
-                self.advance(1 + len_sz)?;
-                Ok(v)
+        let len_sz = self.cbor_len_sz()?;
+        match len_sz {
+            LenSz::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::UnsignedInteger)),
+            LenSz::Len(v, sz) => {
+                self.advance(1 + sz.bytes_following())?;
+                Ok((v, sz))
             }
         }
     }
@@ -372,6 +401,23 @@ impl<R: BufRead> Deserializer<R> {
         }
     }
 
+    /// Read a `NegativeInteger` from the `Deserializer` with encoding information
+    ///
+    /// Same as `negative_integer` but returns the `Sz` (bytes used)
+    /// in the encoding as well as using a `i128` return type as `i64`
+    /// does not cover the entire CBOR `nint` range.
+    pub fn negative_integer_sz(&mut self) -> Result<(i128, Sz)> {
+        self.cbor_expect_type(Type::NegativeInteger)?;
+        let len_sz = self.cbor_len_sz()?;
+        match len_sz {
+            LenSz::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::NegativeInteger)),
+            LenSz::Len(v, sz) => {
+                self.advance(1 + sz.bytes_following())?;
+                Ok((-(v as i128) - 1, sz))
+            }
+        }
+    }
+
     /// Read a Bytes from the Deserializer
     ///
     /// The function fails if the type of the given Deserializer is not `Type::Bytes`.
@@ -388,31 +434,40 @@ impl<R: BufRead> Deserializer<R> {
     /// let bytes = raw.bytes().unwrap();
     /// ```
     pub fn bytes<'a>(&'a mut self) -> Result<Vec<u8>> {
+        Ok(self.bytes_sz()?.0)
+    }
+
+    /// Read a Bytes from the Deserializer with encoding information
+    /// 
+    /// Same as `bytes` but also returns `StringLenSz` for details about the encoding used.
+    pub fn bytes_sz<'a>(&'a mut self) -> Result<(Vec<u8>, StringLenSz)> {
         use std::io::Read;
 
         self.cbor_expect_type(Type::Bytes)?;
-        let (len, len_sz) = self.cbor_len()?;
-        self.advance(1 + len_sz)?;
-        match len {
-            Len::Indefinite => {
+        let len_sz = self.cbor_len_sz()?;
+        self.advance(1 + len_sz.bytes_following())?;
+        match len_sz {
+            LenSz::Indefinite => {
                 let mut bytes = vec![];
+                let mut chunk_lens = Vec::new();
                 while self.cbor_type()? != Type::Special || !self.special_break()? {
                     self.cbor_expect_type(Type::Bytes)?;
-                    let (chunk_len, chunk_len_sz) = self.cbor_len()?;
-                    match chunk_len {
-                        Len::Indefinite => return Err(Error::InvalidIndefiniteString),
-                        Len::Len(len) => {
-                            self.advance(1 + chunk_len_sz)?;
+                    let chunk_len_sz = self.cbor_len_sz()?;
+                    match chunk_len_sz {
+                        LenSz::Indefinite => return Err(Error::InvalidIndefiniteString),
+                        LenSz::Len(len, sz) => {
+                            self.advance(1 + sz.bytes_following())?;
                             self.0.by_ref().take(len).read_to_end(&mut bytes)?;
+                            chunk_lens.push((len, sz));
                         }
                     }
                 }
-                Ok(bytes)
+                Ok((bytes, StringLenSz::Indefinite(chunk_lens)))
             }
-            Len::Len(len) => {
+            LenSz::Len(len, sz) => {
                 let mut bytes = vec![0; len as usize];
                 self.0.read_exact(&mut bytes)?;
-                Ok(bytes)
+                Ok((bytes, StringLenSz::Len(sz)))
             }
         }
     }
@@ -435,35 +490,44 @@ impl<R: BufRead> Deserializer<R> {
     /// assert!(&*text == "text");
     /// ```
     pub fn text(&mut self) -> Result<String> {
+        Ok(self.text_sz()?.0)
+    }
+    
+    /// Read a Text from the Deserializer with encoding information
+    /// 
+    /// Same as `text` but also returns `StringLenSz` for details about the encoding used.
+    pub fn text_sz(&mut self) -> Result<(String, StringLenSz)> {
         self.cbor_expect_type(Type::Text)?;
-        let (len, len_sz) = self.cbor_len()?;
-        self.advance(1 + len_sz)?;
-        match len {
-            Len::Indefinite => {
+        let len_sz = self.cbor_len_sz()?;
+        self.advance(1 + len_sz.bytes_following())?;
+        match len_sz {
+            LenSz::Indefinite => {
                 let mut text = String::new();
+                let mut chunk_lens = Vec::new();
                 while self.cbor_type()? != Type::Special || !self.special_break()? {
                     self.cbor_expect_type(Type::Text)?;
-                    let (chunk_len, chunk_len_sz) = self.cbor_len()?;
+                    let chunk_len = self.cbor_len_sz()?;
                     match chunk_len {
-                        Len::Indefinite => return Err(Error::InvalidIndefiniteString),
-                        Len::Len(len) => {
+                        LenSz::Indefinite => return Err(Error::InvalidIndefiniteString),
+                        LenSz::Len(len, sz) => {
                             // rfc7049 forbids splitting UTF-8 characters across chunks so we must
                             // read each chunk separately as a definite encoded UTF-8 string
-                            self.advance(1 + chunk_len_sz)?;
+                            self.advance(1 + sz.bytes_following())?;
                             let mut bytes = vec![0; len as usize];
                             self.0.read_exact(&mut bytes)?;
                             let chunk_text = String::from_utf8(bytes)?;
                             text.push_str(&chunk_text);
+                            chunk_lens.push((len, sz));
                         }
                     }
                 }
-                Ok(text)
+                Ok((text, StringLenSz::Indefinite(chunk_lens)))
             }
-            Len::Len(len) => {
+            LenSz::Len(len, sz) => {
                 let mut bytes = vec![0; len as usize];
                 self.0.read_exact(&mut bytes)?;
                 let text = String::from_utf8(bytes)?;
-                Ok(text)
+                Ok((text, StringLenSz::Len(sz)))
             }
         }
     }
@@ -515,6 +579,17 @@ impl<R: BufRead> Deserializer<R> {
         Ok(len)
     }
 
+    /// cbor array of cbor objects with length encoding information
+    /// 
+    /// Same as `array` but returns the `LenSz` instead which contains
+    /// additional information about the encoding used for the length
+    pub fn array_sz(&mut self) -> Result<LenSz> {
+        self.cbor_expect_type(Type::Array)?;
+        let len_sz = self.cbor_len_sz()?;
+        self.advance(1 + len_sz.bytes_following())?;
+        Ok(len_sz)
+    }
+
     /// Helper to decode a cbor array using a specified function.
     ///
     /// This works with either definite or indefinite arrays. Each call to the
@@ -562,6 +637,17 @@ impl<R: BufRead> Deserializer<R> {
         Ok(len)
     }
 
+    /// cbor map with length encoding information
+    /// 
+    /// Same as `map` but returns the `LenSz` instead which contains
+    /// additional information about the encoding used for the length
+    pub fn map_sz(&mut self) -> Result<LenSz> {
+        self.cbor_expect_type(Type::Map)?;
+        let len_sz = self.cbor_len_sz()?;
+        self.advance(1 + len_sz.bytes_following())?;
+        Ok(len_sz)
+    }
+
     /// Helper to decode a cbor map using a specified function
     ///
     /// This works with either definite or indefinite maps. Each call to the
@@ -595,12 +681,19 @@ impl<R: BufRead> Deserializer<R> {
     /// ```
     ///
     pub fn tag(&mut self) -> Result<u64> {
+        Ok(self.tag_sz()?.0)
+    }
+
+    /// CBOR Tag with encoding information
+    /// 
+    /// Same as `tag` but returns the `Sz` (bytes used) in the encoding
+    pub fn tag_sz(&mut self) -> Result<(u64, Sz)> {
         self.cbor_expect_type(Type::Tag)?;
-        match self.cbor_len()? {
-            (Len::Indefinite, _) => Err(Error::IndefiniteLenNotSupported(Type::Tag)),
-            (Len::Len(len), sz) => {
-                self.advance(1 + sz)?;
-                Ok(len)
+        match self.cbor_len_sz()? {
+            LenSz::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::Tag)),
+            LenSz::Len(len, sz) => {
+                self.advance(1 + sz.bytes_following())?;
+                Ok((len, sz))
             }
         }
     }
@@ -1006,5 +1099,153 @@ mod test {
 
         let crc = raw.unsigned_integer().unwrap();
         assert!(crc as u32 == 0x71AD5836);
+    }
+
+    #[test]
+    fn uint_sz() {
+        let vec = vec![
+            0x09,
+            0x18, 0x09,
+            0x19, 0x00, 0x09,
+            0x1a, 0x00, 0x00, 0x00, 0x09,
+            0x1b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09,
+        ];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        assert_eq!(raw.unsigned_integer_sz().unwrap(), (9, Sz::Inline));
+        assert_eq!(raw.unsigned_integer_sz().unwrap(), (9, Sz::One));
+        assert_eq!(raw.unsigned_integer_sz().unwrap(), (9, Sz::Two));
+        assert_eq!(raw.unsigned_integer_sz().unwrap(), (9, Sz::Four));
+        assert_eq!(raw.unsigned_integer_sz().unwrap(), (9, Sz::Eight));
+    }
+
+    #[test]
+    fn nint_sz() {
+        let vec = vec![
+            0x28,
+            0x38, 0x08,
+            0x39, 0x00, 0x08,
+            0x3a, 0x00, 0x00, 0x00, 0x08,
+            0x3b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
+        ];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::Inline));
+        assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::One));
+        assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::Two));
+        assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::Four));
+        assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::Eight));
+    }
+
+    #[test]
+    fn bytes_sz() {
+        let def_parts: Vec<Vec<u8>> = vec![
+            vec![0x44, 0xBA, 0xAD, 0xF0, 0x0D],
+            vec![0x58, 0x04, 0xCA, 0xFE, 0xD0, 0x0D],
+            vec![0x59, 0x00, 0x04, 0xDE, 0xAD, 0xBE, 0xEF],
+            vec![0x5a, 0x00, 0x00, 0x00, 0x02, 0xCA, 0xFE],
+            vec![0x5b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xBE, 0xEF],
+        ];
+        let mut vec: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        // also make an indefinite encoded one out all the definite-encoded parts
+        vec.push(0x5F);
+        for slice in def_parts.iter() {
+            vec.extend_from_slice(&slice[..]);
+        }
+        vec.push(0xFF);
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        let indef_bytes = vec![
+            0xBA, 0xAD, 0xF0, 0x0D,
+            0xCA, 0xFE, 0xD0, 0x0D,
+            0xDE, 0xAD, 0xBE, 0xEF,
+            0xCA, 0xFE,
+            0xBE, 0xEF,
+        ];
+        let indef_lens = vec![(4, Sz::Inline), (4, Sz::One), (4, Sz::Two), (2, Sz::Four), (2, Sz::Eight)];
+        assert_eq!(raw.bytes_sz().unwrap(), (vec![0xBA, 0xAD, 0xF0, 0x0D], StringLenSz::Len(Sz::Inline)));
+        assert_eq!(raw.bytes_sz().unwrap(), (vec![0xCA, 0xFE, 0xD0, 0x0D], StringLenSz::Len(Sz::One)));
+        assert_eq!(raw.bytes_sz().unwrap(), (vec![0xDE, 0xAD, 0xBE, 0xEF], StringLenSz::Len(Sz::Two)));
+        assert_eq!(raw.bytes_sz().unwrap(), (vec![0xCA, 0xFE], StringLenSz::Len(Sz::Four)));
+        assert_eq!(raw.bytes_sz().unwrap(), (vec![0xBE, 0xEF], StringLenSz::Len(Sz::Eight)));
+        assert_eq!(raw.bytes_sz().unwrap(), (indef_bytes, StringLenSz::Indefinite(indef_lens)));
+    }
+
+    #[test]
+    fn text_sz() {
+        let def_parts: Vec<Vec<u8>> = vec![
+            vec![0x65, 0x48, 0x65, 0x6c, 0x6c, 0x6f],
+            vec![0x78, 0x05, 0x57, 0x6f, 0x72, 0x6c, 0x64],
+            vec![0x79, 0x00, 0x09, 0xE6, 0x97, 0xA5, 0xE6, 0x9C, 0xAC, 0xE8, 0xAA, 0x9E],
+            vec![0x7a, 0x00, 0x00, 0x00, 0x01, 0x39],
+            vec![0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x41, 0x42, 0x43],
+        ];
+        let mut vec: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        // also make an indefinite encoded one out all the definite-encoded parts
+        vec.push(0x7F);
+        for slice in def_parts.iter() {
+            vec.extend_from_slice(&slice[..]);
+        }
+        vec.push(0xFF);
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        let indef_lens = vec![(5, Sz::Inline), (5, Sz::One), (9, Sz::Two), (1, Sz::Four), (3, Sz::Eight)];
+        assert_eq!(raw.text_sz().unwrap(), ("Hello".into(), StringLenSz::Len(Sz::Inline)));
+        assert_eq!(raw.text_sz().unwrap(), ("World".into(), StringLenSz::Len(Sz::One)));
+        assert_eq!(raw.text_sz().unwrap(), ("日本語".into(), StringLenSz::Len(Sz::Two)));
+        assert_eq!(raw.text_sz().unwrap(), ("9".into(), StringLenSz::Len(Sz::Four)));
+        assert_eq!(raw.text_sz().unwrap(), ("ABC".into(), StringLenSz::Len(Sz::Eight)));
+        assert_eq!(raw.text_sz().unwrap(), ("HelloWorld日本語9ABC".into(), StringLenSz::Indefinite(indef_lens)));
+    }
+
+    #[test]
+    fn array_sz() {
+        let vec = vec![
+            0x80,
+            0x98, 0x01,
+            0x99, 0x00, 0x02,
+            0x9a, 0x00, 0x00, 0x00, 0x03,
+            0x9b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04,
+            0x9f,
+        ];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        assert_eq!(raw.array_sz().unwrap(), LenSz::Len(0, Sz::Inline));
+        assert_eq!(raw.array_sz().unwrap(), LenSz::Len(1, Sz::One));
+        assert_eq!(raw.array_sz().unwrap(), LenSz::Len(2, Sz::Two));
+        assert_eq!(raw.array_sz().unwrap(), LenSz::Len(3, Sz::Four));
+        assert_eq!(raw.array_sz().unwrap(), LenSz::Len(4, Sz::Eight));
+        assert_eq!(raw.array_sz().unwrap(), LenSz::Indefinite);
+    }
+
+    #[test]
+    fn map_sz() {
+        let vec = vec![
+            0xa0,
+            0xb8, 0x01,
+            0xb9, 0x00, 0x02,
+            0xba, 0x00, 0x00, 0x00, 0x03,
+            0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04,
+            0xbf,
+        ];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        assert_eq!(raw.map_sz().unwrap(), LenSz::Len(0, Sz::Inline));
+        assert_eq!(raw.map_sz().unwrap(), LenSz::Len(1, Sz::One));
+        assert_eq!(raw.map_sz().unwrap(), LenSz::Len(2, Sz::Two));
+        assert_eq!(raw.map_sz().unwrap(), LenSz::Len(3, Sz::Four));
+        assert_eq!(raw.map_sz().unwrap(), LenSz::Len(4, Sz::Eight));
+        assert_eq!(raw.map_sz().unwrap(), LenSz::Indefinite);
+    }
+
+    #[test]
+    fn tag_sz() {
+        let vec = vec![
+            0xc9,
+            0xd8, 0x01,
+            0xd9, 0x00, 0x02,
+            0xda, 0x00, 0x00, 0x00, 0x04,
+            0xdb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
+        ];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+        assert_eq!(raw.tag_sz().unwrap(), (9, Sz::Inline));
+        assert_eq!(raw.tag_sz().unwrap(), (1, Sz::One));
+        assert_eq!(raw.tag_sz().unwrap(), (2, Sz::Two));
+        assert_eq!(raw.tag_sz().unwrap(), (4, Sz::Four));
+        assert_eq!(raw.tag_sz().unwrap(), (8, Sz::Eight));
     }
 }

@@ -30,6 +30,8 @@ pub enum Error {
     IoError(::std::io::Error),
     TrailingData,
     InvalidIndefiniteString,
+    InvalidLenPassed(len::Sz),
+    InvalidNint(i128),
 
     CustomError(String),
 }
@@ -91,7 +93,9 @@ impl fmt::Display for Error {
             IoError(_io_error) => write!(f, "Invalid cbor: I/O error"),
             TrailingData => write!(f, "Unexpected trailing data in CBOR"),
             InvalidIndefiniteString => write!(f, "Invalid cbor: Invalid indefinite string format"),
+            InvalidLenPassed(sz) => write!(f, "Invalid length for serialization: {:?}", sz),
             CustomError(err) => write!(f, "Invalid cbor: {}", err),
+            InvalidNint(x) => write!(f, "Passed nint {} out of range", x),
         }
     }
 }
