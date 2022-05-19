@@ -1,0 +1,125 @@
+on:
+  push:
+    branches:
+    - master
+    - main
+  pull_request:
+    branches:
+    - master
+    - main
+
+name: CI
+
+jobs:
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
+
+  test:
+    name: Rust project
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - beta
+          - nightly
+          - 1.58.0  # MSRV
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+
+  apple:
+    name: Rust project
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+        platform:
+          - aarch64-apple-ios
+          - x86_64-apple-darwin
+          - x86_64-apple-ios
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.platform }}
+          override: true
+
+      - uses: actions-rs/cargo@v1
+        if: ${{ matrix.platform != 'x86_64-apple-darwin' }}
+        with:
+          use-cross: true
+          command: build
+          args: --target ${{ matrix.platform }}
+
+      - uses: actions-rs/cargo@v1
+        if: ${{ matrix.platform == 'x86_64-apple-darwin' }}
+        with:
+          use-cross: true
+          command: test
+          args: --target ${{ matrix.platform }}
+
+  linux:
+    name: Rust project
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+        case:
+          - { platform: aarch64-unknown-linux-gnu, test: true }
+          - { platform: aarch64-linux-android, test: false }
+          - { platform: x86_64-unknown-linux-gnu, test: false }
+          - { platform: x86_64-unknown-linux-musl, test: false }
+          - { platform: x86_64-linux-android, test: false }
+          - { platform: x86_64-unknown-freebsd, test: false }
+          - { platform: wasm32-unknown-emscripten, test: false }
+          - { platform: wasm32-unknown-unknown, test: false }
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.case.platform }}
+          override: true
+
+      - uses: actions-rs/cargo@v1
+        if: ${{ !matrix.case.test }}
+        with:
+          use-cross: true
+          command: build
+          args: --target ${{ matrix.case.platform }}
+
+      - uses: actions-rs/cargo@v1
+        if: ${{ matrix.case.test }}
+        with:
+          use-cross: true
+          command: test
+          args: --target ${{ matrix.case.platform }}

@@ -334,11 +334,16 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// Writes a CBOR type with the extra `len` information
-    /// 
+    ///
     /// if `sz` is passed in, it will use that length/data encoding
     /// otherwise the minimum size (e.g. canonical) encoding will be used
     #[inline]
-    fn write_type_definite(&mut self, cbor_type: Type, len: u64, sz: Option<Sz>) -> Result<&mut Self> {
+    fn write_type_definite(
+        &mut self,
+        cbor_type: Type,
+        len: u64,
+        sz: Option<Sz>,
+    ) -> Result<&mut Self> {
         let extra_sz = match sz {
             None => Sz::canonical(len),
             Some(sz) => {
@@ -353,17 +358,21 @@ impl<W: Write + Sized> Serializer<W> {
                     return Err(Error::InvalidLenPassed(sz));
                 }
                 sz
-            },
+            }
         };
         match extra_sz {
             Sz::Inline => self.write_u8(cbor_type.to_byte(len as u8)),
-            Sz::One => self.write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U8))
+            Sz::One => self
+                .write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U8))
                 .and_then(|s| s.write_u8(len as u8)),
-            Sz::Two => self.write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U16))
+            Sz::Two => self
+                .write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U16))
                 .and_then(|s| s.write_u16(len as u16)),
-            Sz::Four => self.write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U32))
+            Sz::Four => self
+                .write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U32))
                 .and_then(|s| s.write_u32(len as u32)),
-            Sz::Eight => self.write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U64))
+            Sz::Eight => self
+                .write_u8(cbor_type.to_byte(super::CBOR_PAYLOAD_LENGTH_U64))
                 .and_then(|s| s.write_u64(len)),
         }
     }
@@ -387,7 +396,7 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// serialise the given unsigned integer using a specific encoding
-    /// 
+    ///
     /// see `write_unsigned_integer` and `Sz`
     pub fn write_unsigned_integer_sz(&mut self, value: u64, sz: Sz) -> Result<&mut Self> {
         self.write_type_definite(Type::UnsignedInteger, value, Some(sz))
@@ -412,13 +421,15 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// write a negative integer using a specific encoding
-    /// 
+    ///
     /// see `write_negative_integer` and `Sz`
-    /// 
+    ///
     /// `value` must be within -1 and -u64::MAX -1 to fit into CBOR nint
     pub fn write_negative_integer_sz(&mut self, value: i128, sz: Sz) -> Result<&mut Self> {
         use std::convert::TryInto;
-        let value_u64 = (-value -1).try_into().map_err(|_| Error::InvalidNint(value))?;
+        let value_u64 = (-value - 1)
+            .try_into()
+            .map_err(|_| Error::InvalidNint(value))?;
         self.write_type_definite(Type::NegativeInteger, value_u64, Some(sz))
     }
 
@@ -444,16 +455,21 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// write the given object as bytes using a specific bytestring encoding
-    /// 
+    ///
     /// see `write_bytes` and `StringLenSz`
-    pub fn write_bytes_sz<B: AsRef<[u8]>>(&mut self, bytes: B, sz: StringLenSz) -> Result<&mut Self> {
+    pub fn write_bytes_sz<B: AsRef<[u8]>>(
+        &mut self,
+        bytes: B,
+        sz: StringLenSz,
+    ) -> Result<&mut Self> {
         let bytes = bytes.as_ref();
         match sz {
-            StringLenSz::Len(sz) => self.write_type_definite(Type::Bytes, bytes.len() as u64, Some(sz))
-            .and_then(|s| {
-                s.0.write_all(bytes)?;
-                Ok(s)
-            }),
+            StringLenSz::Len(sz) => self
+                .write_type_definite(Type::Bytes, bytes.len() as u64, Some(sz))
+                .and_then(|s| {
+                    s.0.write_all(bytes)?;
+                    Ok(s)
+                }),
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
                 if sz_sum != bytes.len() as u64 {
@@ -469,7 +485,7 @@ impl<W: Write + Sized> Serializer<W> {
                 }
                 self.write_u8(Type::Special.to_byte(0x1f))?;
                 Ok(self)
-            },
+            }
         }
     }
 
@@ -495,16 +511,17 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// write the given object as text using a specific string encoding
-    /// 
+    ///
     /// see `write_text` and `StringLenSz`
     pub fn write_text_sz<S: AsRef<str>>(&mut self, text: S, sz: StringLenSz) -> Result<&mut Self> {
         let bytes = text.as_ref().as_bytes();
         match sz {
-            StringLenSz::Len(sz) => self.write_type_definite(Type::Text, bytes.len() as u64, Some(sz))
-            .and_then(|s| {
-                s.0.write_all(bytes)?;
-                Ok(s)
-            }),
+            StringLenSz::Len(sz) => self
+                .write_type_definite(Type::Text, bytes.len() as u64, Some(sz))
+                .and_then(|s| {
+                    s.0.write_all(bytes)?;
+                    Ok(s)
+                }),
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
                 if sz_sum != bytes.len() as u64 {
@@ -522,7 +539,7 @@ impl<W: Write + Sized> Serializer<W> {
                 }
                 self.write_u8(Type::Special.to_byte(0x1f))?;
                 Ok(self)
-            },
+            }
         }
     }
 
@@ -573,7 +590,7 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// start to write an array using a specific length encoding
-    /// 
+    ///
     /// see `write_array` and `LenSz`
     pub fn write_array_sz(&mut self, len: LenSz) -> Result<&mut Self> {
         match len {
@@ -637,7 +654,7 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// start to write a map using a specific length encoding
-    /// 
+    ///
     /// see `write_map` and `LenSz`
     pub fn write_map_sz(&mut self, len: LenSz) -> Result<&mut Self> {
         match len {
@@ -670,7 +687,7 @@ impl<W: Write + Sized> Serializer<W> {
     }
 
     /// write a tag using a specific encoding
-    /// 
+    ///
     /// see `write_tag` and `Sz`
     pub fn write_tag_sz(&mut self, tag: u64, sz: Sz) -> Result<&mut Self> {
         self.write_type_definite(Type::Tag, tag, Some(sz))
@@ -918,15 +935,12 @@ mod test {
         assert!(test_special(Special::Unassigned(19), [0xf3].as_ref()));
         assert!(test_special(Special::Unassigned(24), [0xf8, 0x18].as_ref()));
     }
-    
+
     #[test]
     fn uint_sz() {
         let expected_bytes = vec![
-            0x09,
-            0x18, 0x09,
-            0x19, 0x00, 0x09,
-            0x1a, 0x00, 0x00, 0x00, 0x09,
-            0x1b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09,
+            0x09, 0x18, 0x09, 0x19, 0x00, 0x09, 0x1a, 0x00, 0x00, 0x00, 0x09, 0x1b, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x09,
         ];
         let mut serializer = Serializer::new_vec();
         serializer
@@ -947,11 +961,8 @@ mod test {
     #[test]
     fn nint_sz() {
         let expected_bytes = vec![
-            0x28,
-            0x38, 0x08,
-            0x39, 0x00, 0x08,
-            0x3a, 0x00, 0x00, 0x00, 0x08,
-            0x3b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
+            0x28, 0x38, 0x08, 0x39, 0x00, 0x08, 0x3a, 0x00, 0x00, 0x00, 0x08, 0x3b, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
         ];
         let mut serializer = Serializer::new_vec();
         serializer
@@ -968,7 +979,9 @@ mod test {
 
         // just outside of cbor NINT range
         let big_nint = -(u64::MAX as i128) - 2;
-        assert!(serializer.write_negative_integer_sz(big_nint, Sz::Eight).is_err());
+        assert!(serializer
+            .write_negative_integer_sz(big_nint, Sz::Eight)
+            .is_err());
 
         let bytes = serializer.finalize();
         assert_eq!(bytes, expected_bytes);
@@ -981,9 +994,11 @@ mod test {
             vec![0x58, 0x04, 0xCA, 0xFE, 0xD0, 0x0D],
             vec![0x59, 0x00, 0x04, 0xDE, 0xAD, 0xBE, 0xEF],
             vec![0x5a, 0x00, 0x00, 0x00, 0x02, 0xCA, 0xFE],
-            vec![0x5b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xBE, 0xEF],
+            vec![
+                0x5b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xBE, 0xEF,
+            ],
         ];
-        let mut expected_bytes: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        let mut expected_bytes: Vec<u8> = def_parts.iter().flatten().cloned().collect();
         // also make an indefinite encoded one out all the definite-encoded parts
         expected_bytes.push(0x5F);
         for slice in def_parts.iter() {
@@ -991,13 +1006,16 @@ mod test {
         }
         expected_bytes.push(0xFF);
         let indef_bytes = vec![
-            0xBA, 0xAD, 0xF0, 0x0D,
-            0xCA, 0xFE, 0xD0, 0x0D,
-            0xDE, 0xAD, 0xBE, 0xEF,
-            0xCA, 0xFE,
+            0xBA, 0xAD, 0xF0, 0x0D, 0xCA, 0xFE, 0xD0, 0x0D, 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE,
             0xBE, 0xEF,
         ];
-        let indef_lens = vec![(4, Sz::Inline), (4, Sz::One), (4, Sz::Two), (2, Sz::Four), (2, Sz::Eight)];
+        let indef_lens = vec![
+            (4, Sz::Inline),
+            (4, Sz::One),
+            (4, Sz::Two),
+            (2, Sz::Four),
+            (2, Sz::Eight),
+        ];
         let mut serializer = Serializer::new_vec();
         serializer
             .write_bytes_sz(vec![0xBA, 0xAD, 0xF0, 0x0D], StringLenSz::Len(Sz::Inline))
@@ -1021,18 +1039,28 @@ mod test {
         let def_parts: Vec<Vec<u8>> = vec![
             vec![0x65, 0x48, 0x65, 0x6c, 0x6c, 0x6f],
             vec![0x78, 0x05, 0x57, 0x6f, 0x72, 0x6c, 0x64],
-            vec![0x79, 0x00, 0x09, 0xE6, 0x97, 0xA5, 0xE6, 0x9C, 0xAC, 0xE8, 0xAA, 0x9E],
+            vec![
+                0x79, 0x00, 0x09, 0xE6, 0x97, 0xA5, 0xE6, 0x9C, 0xAC, 0xE8, 0xAA, 0x9E,
+            ],
             vec![0x7a, 0x00, 0x00, 0x00, 0x01, 0x39],
-            vec![0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x41, 0x42, 0x43],
+            vec![
+                0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x41, 0x42, 0x43,
+            ],
         ];
-        let mut expected_bytes: Vec<u8> = def_parts.iter().cloned().flatten().collect();
+        let mut expected_bytes: Vec<u8> = def_parts.iter().flatten().cloned().collect();
         // also make an indefinite encoded one out all the definite-encoded parts
         expected_bytes.push(0x7F);
         for slice in def_parts.iter() {
             expected_bytes.extend_from_slice(&slice[..]);
         }
         expected_bytes.push(0xFF);
-        let indef_lens = vec![(5, Sz::Inline), (5, Sz::One), (9, Sz::Two), (1, Sz::Four), (3, Sz::Eight)];
+        let indef_lens = vec![
+            (5, Sz::Inline),
+            (5, Sz::One),
+            (9, Sz::Two),
+            (1, Sz::Four),
+            (3, Sz::Eight),
+        ];
         let mut serializer = Serializer::new_vec();
         serializer
             .write_text_sz("Hello", StringLenSz::Len(Sz::Inline))
@@ -1054,12 +1082,8 @@ mod test {
     #[test]
     fn array_sz() {
         let expected_bytes = vec![
-            0x80,
-            0x98, 0x01,
-            0x99, 0x00, 0x02,
-            0x9a, 0x00, 0x00, 0x00, 0x03,
-            0x9b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04,
-            0x9f,
+            0x80, 0x98, 0x01, 0x99, 0x00, 0x02, 0x9a, 0x00, 0x00, 0x00, 0x03, 0x9b, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x9f,
         ];
         let mut serializer = Serializer::new_vec();
         serializer
@@ -1082,12 +1106,8 @@ mod test {
     #[test]
     fn map_sz() {
         let expected_bytes = vec![
-            0xa0,
-            0xb8, 0x01,
-            0xb9, 0x00, 0x02,
-            0xba, 0x00, 0x00, 0x00, 0x03,
-            0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04,
-            0xbf,
+            0xa0, 0xb8, 0x01, 0xb9, 0x00, 0x02, 0xba, 0x00, 0x00, 0x00, 0x03, 0xbb, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xbf,
         ];
         let mut serializer = Serializer::new_vec();
         serializer
@@ -1110,11 +1130,8 @@ mod test {
     #[test]
     fn tag_sz() {
         let expected_bytes = vec![
-            0x09,
-            0x18, 0x09,
-            0x19, 0x00, 0x09,
-            0x1a, 0x00, 0x00, 0x00, 0x09,
-            0x1b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09,
+            0x09, 0x18, 0x09, 0x19, 0x00, 0x09, 0x1a, 0x00, 0x00, 0x00, 0x09, 0x1b, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x09,
         ];
         let mut serializer = Serializer::new_vec();
         serializer
@@ -1135,14 +1152,32 @@ mod test {
     #[test]
     fn write_type_doesnt_fit() {
         let mut serializer = Serializer::new_vec();
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, 23, Some(Sz::Inline)).is_ok());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, 24, Some(Sz::Inline)).is_err());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, u8::MAX as u64, Some(Sz::One)).is_ok());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, u8::MAX as u64 + 1, Some(Sz::One)).is_err());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, u16::MAX as u64, Some(Sz::Two)).is_ok());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, u16::MAX as u64 + 1, Some(Sz::Two)).is_err());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, u32::MAX as u64, Some(Sz::Four)).is_ok());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, u32::MAX as u64 + 1, Some(Sz::Four)).is_err());
-        assert!(serializer.write_type_definite(Type::UnsignedInteger, u64::MAX as u64, Some(Sz::Eight)).is_ok());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, 23, Some(Sz::Inline))
+            .is_ok());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, 24, Some(Sz::Inline))
+            .is_err());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, u8::MAX as u64, Some(Sz::One))
+            .is_ok());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, u8::MAX as u64 + 1, Some(Sz::One))
+            .is_err());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, u16::MAX as u64, Some(Sz::Two))
+            .is_ok());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, u16::MAX as u64 + 1, Some(Sz::Two))
+            .is_err());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, u32::MAX as u64, Some(Sz::Four))
+            .is_ok());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, u32::MAX as u64 + 1, Some(Sz::Four))
+            .is_err());
+        assert!(serializer
+            .write_type_definite(Type::UnsignedInteger, u64::MAX as u64, Some(Sz::Eight))
+            .is_ok());
     }
 }
