@@ -72,6 +72,14 @@ jobs:
           override: true
 
       - uses: actions-rs/cargo@v1
+        if: ${{ matrix.platform != 'x86_64-apple-darwin' }}
+        with:
+          use-cross: true
+          command: build
+          args: --target ${{ matrix.platform }}
+
+      - uses: actions-rs/cargo@v1
+        if: ${{ matrix.platform == 'x86_64-apple-darwin' }}
         with:
           use-cross: true
           command: test
@@ -84,34 +92,34 @@ jobs:
       matrix:
         rust:
           - stable
-        platform:
-          - aarch64-unknown-linux-gnu
-          - aarch64-linux-android
-          - arm-unknown-linux-gnueabi
-          - arm-linux-androideabi
-          - armv7-unknown-linux-gnueabihf
-          - armv7-linux-androideabi
-          - i686-unknown-linux-gnu
-          - i686-unknown-linux-musl
-          - i686-unknown-freebsd
-          - i686-linux-android
-          - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - x86_64-linux-android
-          - x86_64-unknown-freebsd
-          - wasm32-unknown-emscripten
-          - wasm32-unknown-unknown
+        case:
+          - { platform: aarch64-unknown-linux-gnu, test: true }
+          - { platform: aarch64-linux-android, test: false }
+          - { platform: x86_64-unknown-linux-gnu, test: false }
+          - { platform: x86_64-unknown-linux-musl, test: false }
+          - { platform: x86_64-linux-android, test: false }
+          - { platform: x86_64-unknown-freebsd, test: false }
+          - { platform: wasm32-unknown-emscripten, test: false }
+          - { platform: wasm32-unknown-unknown, test: false }
 
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
-          target: ${{ matrix.platform }}
+          target: ${{ matrix.case.platform }}
           override: true
 
       - uses: actions-rs/cargo@v1
+        if: ${{ !matrix.case.test }}
+        with:
+          use-cross: true
+          command: build
+          args: --target ${{ matrix.case.platform }}
+
+      - uses: actions-rs/cargo@v1
+        if: ${{ matrix.case.test }}
         with:
           use-cross: true
           command: test
-          args: --target ${{ matrix.platform }}
+          args: --target ${{ matrix.case.platform }}
