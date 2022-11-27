@@ -60,6 +60,22 @@ impl Serialize for bool {
         serializer.write_special(Special::Bool(*self))
     }
 }
+impl Serialize for f32 {
+    fn serialize<'a, W: Write + Sized>(
+        &self,
+        serializer: &'a mut Serializer<W>,
+    ) -> Result<&'a mut Serializer<W>> {
+        serializer.write_special(Special::Float((*self) as f64))
+    }
+}
+impl Serialize for f64 {
+    fn serialize<'a, W: Write + Sized>(
+        &self,
+        serializer: &'a mut Serializer<W>,
+    ) -> Result<&'a mut Serializer<W>> {
+        serializer.write_special(Special::Float(*self))
+    }
+}
 impl Serialize for String {
     fn serialize<'a, W: Write + Sized>(
         &self,
