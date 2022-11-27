@@ -333,6 +333,12 @@ impl<W: Write + Sized> Serializer<W> {
         Ok(self)
     }
 
+    #[inline]
+    fn write_f64(&mut self, value: f64) -> Result<&mut Self> {
+        self.0.write_all(&value.to_be_bytes())?;
+        Ok(self)
+    }
+
     /// Writes a CBOR type with the extra `len` information
     ///
     /// if `sz` is passed in, it will use that length/data encoding
@@ -728,10 +734,9 @@ impl<W: Write + Sized> Serializer<W> {
             Special::Unassigned(v) => self
                 .write_u8(Type::Special.to_byte(0x18))
                 .and_then(|s| s.write_u8(v)),
-            Special::Float(f) => unimplemented!(
-                "we currently do not support floating point serialisation, cannot serialize: {}",
-                f
-            ),
+            Special::Float(f) => self
+                .write_u8(Type::Special.to_byte(0x1b))
+                .and_then(|s| s.write_f64(f)),
             Special::Break => self.write_u8(Type::Special.to_byte(0x1f)),
         }
     }
