@@ -57,6 +57,18 @@ impl Deserialize for bool {
     }
 }
 
+impl Deserialize for f32 {
+    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+        raw.float().map(|f| f as f32)
+    }
+}
+
+impl Deserialize for f64 {
+    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+        raw.float()
+    }
+}
+
 impl Deserialize for String {
     fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
         raw.text()
@@ -786,6 +798,10 @@ impl<R: BufRead> Deserializer<R> {
 
     pub fn bool(&mut self) -> Result<bool> {
         self.special()?.unwrap_bool()
+    }
+
+    pub fn float(&mut self) -> Result<f64> {
+        self.special()?.unwrap_float()
     }
 
     pub fn deserialize<T>(&mut self) -> Result<T>
