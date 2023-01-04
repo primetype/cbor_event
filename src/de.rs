@@ -954,6 +954,26 @@ mod test {
     }
 
     #[test]
+    fn float64() {
+        let vec = vec![0xfb, 0x3f, 0xf1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+
+        let float = raw.float().unwrap();
+
+        assert_eq!(float, 1.1);
+    }
+
+    #[test]
+    fn float32() {
+        let vec = vec![0xfa, 0x47, 0xc3, 0x50, 0x00];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+
+        let float = raw.float().unwrap();
+
+        assert_eq!(float, 100000.0);
+    }
+
+    #[test]
     fn array() {
         let vec = vec![0x86, 0, 1, 2, 3, 4, 5];
         let mut raw = Deserializer::from(Cursor::new(vec));
