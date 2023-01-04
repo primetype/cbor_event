@@ -775,14 +775,14 @@ impl<R: BufRead> Deserializer<R> {
                 Ok(Special::Float(f as f64))
             }
             0x1a => {
-                let f = self.u32(1)?;
+                let f = self.u32(1)? as u32;
                 self.advance(5)?;
-                Ok(Special::Float(f as f64))
+                Ok(Special::Float(f32::from_bits(f) as f64))
             }
             0x1b => {
                 let f = self.u64(1)?;
                 self.advance(9)?;
-                Ok(Special::Float(f as f64))
+                Ok(Special::Float(f64::from_bits(f)))
             }
             0x1c..=0x1e => {
                 self.advance(1)?;
