@@ -1,7 +1,8 @@
 # CBOR Event library
 
-[![Build Status](https://travis-ci.org/primetype/cbor_event.svg?branch=master)](https://travis-ci.org/primetype/cbor_event)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/primetype/cbor_event/ci.yml?branch=master)](https://github.com/primetype/cbor_event/actions/workflows/ci.yml)
 ![MIT or APACHE-2 licensed](https://img.shields.io/badge/licensed-MIT%20or%20APACHE--2-blue.svg)
+[![crates.io](https://img.shields.io/crates/v/cbor_event.svg)](https://crates.io/crates/cbor_event)
 
 This library provides a simple, yet efficient CBOR binary parser/serialiser.
 
