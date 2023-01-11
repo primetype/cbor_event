@@ -57,6 +57,18 @@ impl Deserialize for bool {
     }
 }
 
+impl Deserialize for f32 {
+    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+        raw.float().map(|f| f as f32)
+    }
+}
+
+impl Deserialize for f64 {
+    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+        raw.float()
+    }
+}
+
 impl Deserialize for String {
     fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
         raw.text()
@@ -763,14 +775,14 @@ impl<R: BufRead> Deserializer<R> {
                 Ok(Special::Float(f as f64))
             }
             0x1a => {
-                let f = self.u32(1)?;
+                let f = self.u32(1)? as u32;
                 self.advance(5)?;
-                Ok(Special::Float(f as f64))
+                Ok(Special::Float(f32::from_bits(f) as f64))
             }
             0x1b => {
                 let f = self.u64(1)?;
                 self.advance(9)?;
-                Ok(Special::Float(f as f64))
+                Ok(Special::Float(f64::from_bits(f)))
             }
             0x1c..=0x1e => {
                 self.advance(1)?;
@@ -786,6 +798,10 @@ impl<R: BufRead> Deserializer<R> {
 
     pub fn bool(&mut self) -> Result<bool> {
         self.special()?.unwrap_bool()
+    }
+
+    pub fn float(&mut self) -> Result<f64> {
+        self.special()?.unwrap_float()
     }
 
     pub fn deserialize<T>(&mut self) -> Result<T>
@@ -935,6 +951,26 @@ mod test {
         let text = raw.text().unwrap();
 
         assert_eq!(&text, "");
+    }
+
+    #[test]
+    fn float64() {
+        let vec = vec![0xfb, 0x3f, 0xf1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+
+        let float = raw.float().unwrap();
+
+        assert_eq!(float, 1.1);
+    }
+
+    #[test]
+    fn float32() {
+        let vec = vec![0xfa, 0x47, 0xc3, 0x50, 0x00];
+        let mut raw = Deserializer::from(Cursor::new(vec));
+
+        let float = raw.float().unwrap();
+
+        assert_eq!(float, 100000.0);
     }
 
     #[test]

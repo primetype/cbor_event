@@ -60,6 +60,22 @@ impl Serialize for bool {
         serializer.write_special(Special::Bool(*self))
     }
 }
+impl Serialize for f32 {
+    fn serialize<'a, W: Write + Sized>(
+        &self,
+        serializer: &'a mut Serializer<W>,
+    ) -> Result<&'a mut Serializer<W>> {
+        serializer.write_special(Special::Float((*self) as f64))
+    }
+}
+impl Serialize for f64 {
+    fn serialize<'a, W: Write + Sized>(
+        &self,
+        serializer: &'a mut Serializer<W>,
+    ) -> Result<&'a mut Serializer<W>> {
+        serializer.write_special(Special::Float(*self))
+    }
+}
 impl Serialize for String {
     fn serialize<'a, W: Write + Sized>(
         &self,
@@ -330,6 +346,12 @@ impl<W: Write + Sized> Serializer<W> {
                 (value & 0x00_00_00_00_00_00_00_FF) as u8,
             ][..],
         )?;
+        Ok(self)
+    }
+
+    #[inline]
+    fn write_f64(&mut self, value: f64) -> Result<&mut Self> {
+        self.0.write_all(&value.to_be_bytes())?;
         Ok(self)
     }
 
@@ -728,10 +750,9 @@ impl<W: Write + Sized> Serializer<W> {
             Special::Unassigned(v) => self
                 .write_u8(Type::Special.to_byte(0x18))
                 .and_then(|s| s.write_u8(v)),
-            Special::Float(f) => unimplemented!(
-                "we currently do not support floating point serialisation, cannot serialize: {}",
-                f
-            ),
+            Special::Float(f) => self
+                .write_u8(Type::Special.to_byte(0x1b))
+                .and_then(|s| s.write_f64(f)),
             Special::Break => self.write_u8(Type::Special.to_byte(0x1f)),
         }
     }
@@ -934,6 +955,30 @@ mod test {
         assert!(test_special(Special::Unassigned(10), [0xea].as_ref()));
         assert!(test_special(Special::Unassigned(19), [0xf3].as_ref()));
         assert!(test_special(Special::Unassigned(24), [0xf8, 0x18].as_ref()));
+    }
+
+    #[test]
+    fn special_float() {
+        assert!(test_special(
+            Special::Float(1.1),
+            [0xfb, 0x3f, 0xf1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a].as_ref()
+        ));
+        assert!(test_special(
+            Special::Float(-4.1),
+            [0xfb, 0xc0, 0x10, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66].as_ref()
+        ));
+        assert!(test_special(
+            Special::Float(f64::INFINITY),
+            [0xfb, 0x7f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00].as_ref()
+        ));
+        assert!(test_special(
+            Special::Float(f64::NAN),
+            [0xfb, 0x7f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00].as_ref()
+        ));
+        assert!(test_special(
+            Special::Float(f64::NEG_INFINITY),
+            [0xfb, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00].as_ref()
+        ));
     }
 
     #[test]
