@@ -1,4 +1,6 @@
-use std::{error, fmt};
+use alloc::string::{FromUtf8Error, String};
+use alloc::vec::Vec;
+use core::{error, fmt};
 
 use len;
 use types::Type;
@@ -25,9 +27,9 @@ pub enum Error {
     UnknownLenType(u8),
     IndefiniteLenNotSupported(Type),
     WrongLen(u64, len::Len, &'static str),
-    InvalidTextError(::std::string::FromUtf8Error),
+    InvalidTextError(FromUtf8Error),
     CannotParse(Type, Vec<u8>),
-    IoError(::std::io::Error),
+    IoError(Error),
     TrailingData,
     InvalidIndefiniteString,
     InvalidLenPassed(len::Sz),
@@ -35,13 +37,13 @@ pub enum Error {
 
     CustomError(String),
 }
-impl From<::std::string::FromUtf8Error> for Error {
-    fn from(e: ::std::string::FromUtf8Error) -> Self {
+impl From<FromUtf8Error> for Error {
+    fn from(e: FromUtf8Error) -> Self {
         Error::InvalidTextError(e)
     }
 }
-impl From<::std::io::Error> for Error {
-    fn from(e: ::std::io::Error) -> Self {
+impl From<Error> for Error {
+    fn from(e: Error) -> Self {
         Error::IoError(e)
     }
 }

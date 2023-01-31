@@ -11,7 +11,7 @@
 /// # fn main() {
 /// let value = 0u64;
 /// let bytes = cbor!(value).unwrap();
-/// # assert!(bytes == vec![0])
+/// # assert_eq!(bytes, vec![0])
 /// # }
 /// ```
 #[macro_export]

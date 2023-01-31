@@ -32,7 +32,7 @@
 //! use std::io::Cursor;
 //!
 //! let vec = vec![0x43, 0x01, 0x02, 0x03];
-//! let mut raw = Deserializer::from(Cursor::new(vec));
+//! let mut raw = Deserializer::from(vec);
 //! let bytes = raw.bytes().unwrap();
 //!
 //! # assert_eq!(bytes.as_slice(), [1,2,3].as_ref());
@@ -59,9 +59,12 @@
 //! # assert_eq!(bytes, [0x2b].as_ref());
 //! ```
 
+#![no_std]
+#![feature(error_in_core)]
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;
+extern crate alloc;
 
 pub mod de;
 mod error;

@@ -1,5 +1,8 @@
 //! CBOR serialisation tooling
-use std::io::Write;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::convert::TryInto;
+use core::fmt::Write;
 
 use error::Error;
 use len::{Len, LenSz, StringLenSz, Sz};
@@ -448,7 +451,6 @@ impl<W: Write + Sized> Serializer<W> {
     ///
     /// `value` must be within -1 and -u64::MAX -1 to fit into CBOR nint
     pub fn write_negative_integer_sz(&mut self, value: i128, sz: Sz) -> Result<&mut Self> {
-        use std::convert::TryInto;
         let value_u64 = (-value - 1)
             .try_into()
             .map_err(|_| Error::InvalidNint(value))?;
@@ -789,6 +791,8 @@ serialize_array!(
 #[cfg(test)]
 mod test {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn unsigned_integer_0() {
@@ -922,9 +926,6 @@ mod test {
             .write_special(cbor_type)
             .expect("serialize a special");
         let bytes = serializer.finalize();
-        println!("serializing: {:?}", cbor_type);
-        println!("  - expected: {:?}", result);
-        println!("  - got:      {:?}", bytes);
         bytes == result
     }
 

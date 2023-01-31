@@ -9,20 +9,24 @@
 //!
 //! This is why all the objects here are marked as deprecated
 
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt::Write;
+#[cfg(test)]
+use core::iter::repeat_with;
+
+#[cfg(test)]
+use quickcheck::{Arbitrary, Gen};
+
 use de::*;
 use error::Error;
 use len::Len;
 use result::Result;
 use se::*;
 use types::{Special, Type};
-
-use std::{
-    collections::BTreeMap,
-    io::{BufRead, Write},
-};
-
-#[cfg(test)]
-use quickcheck::{Arbitrary, Gen};
 
 /// CBOR Object key, represents the possible supported values for
 /// a CBOR key in a CBOR Map.
@@ -229,8 +233,6 @@ fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
 
 #[cfg(test)]
 fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
-    use std::iter::repeat_with;
-
     if counter == 0 {
         arbitrary_value_finite(g)
     } else {
@@ -300,6 +302,9 @@ impl Arbitrary for Value {
 
 #[cfg(test)]
 mod test {
+    use alloc::borrow::ToOwned;
+    use alloc::vec;
+
     use super::super::test_encode_decode;
     use super::*;
 
