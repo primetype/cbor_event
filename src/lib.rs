@@ -99,7 +99,7 @@ pub fn test_encode_decode<V: Sized + PartialEq + Serialize + Deserialize>(v: &V)
     v.serialize(&mut se)?;
     let bytes = se.finalize();
 
-    let mut raw = de::Deserializer::from(std::io::Cursor::new(bytes));
+    let mut raw = de::Deserializer::from(bytes);
     let v_ = Deserialize::deserialize(&mut raw)?;
 
     Ok(v == &v_)
