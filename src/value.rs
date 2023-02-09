@@ -9,6 +9,7 @@
 //!
 //! This is why all the objects here are marked as deprecated
 
+use acid_io::BufRead;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;

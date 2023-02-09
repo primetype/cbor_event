@@ -1,5 +1,6 @@
 //! CBOR deserialisation tooling
 
+use acid_io::BufRead;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
