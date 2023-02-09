@@ -134,7 +134,6 @@ impl<T: Deserialize> Deserialize for Option<T> {
 ///
 /// ```
 /// use cbor_event::de::*;
-/// use io::Cursor;
 ///
 /// let vec = vec![0x18, 0x40];
 /// let mut raw = Deserializer::from(vec);
@@ -144,7 +143,6 @@ impl<T: Deserialize> Deserialize for Option<T> {
 ///
 /// ```
 /// use cbor_event::de::*;
-/// use io::Cursor;
 ///
 /// let vec = vec![0x18, 0x40];
 /// let mut raw = Deserializer::from(vec);
@@ -244,7 +242,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```
     /// use cbor_event::{de::*, Type};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0x18, 0x40];
     /// let mut raw = Deserializer::from(vec);
@@ -288,7 +285,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```
     /// use cbor_event::{de::*, Len};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0x83, 0x01, 0x02, 0x03];
     /// let mut raw = Deserializer::from(vec);
@@ -355,7 +351,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```
     /// use cbor_event::de::{*};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0x18, 0x40];
     /// let mut raw = Deserializer::from(vec);
@@ -367,7 +362,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```should_panic
     /// use cbor_event::de::{*};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0x83, 0x01, 0x02, 0x03];
     /// let mut raw = Deserializer::from(vec);
@@ -402,7 +396,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```
     /// use cbor_event::de::{*};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0x38, 0x29];
     /// let mut raw = Deserializer::from(vec);
@@ -448,7 +441,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```
     /// use cbor_event::de::{*};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0x52, 0x73, 0x6F, 0x6D, 0x65, 0x20, 0x72, 0x61, 0x6E, 0x64, 0x6F, 0x6D, 0x20, 0x73, 0x74, 0x72, 0x69, 0x6E, 0x67];
     /// let mut raw = Deserializer::from(vec);
@@ -500,7 +492,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```
     /// use cbor_event::de::{*};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0x64, 0x74, 0x65, 0x78, 0x74];
     /// let mut raw = Deserializer::from(vec);
@@ -639,7 +630,6 @@ impl<R: BufRead> Deserializer<R> {
     ///
     /// ```
     /// use cbor_event::{de::{*}, Len};
-    /// use io::Cursor;
     ///
     /// let vec = vec![0xA2, 0x00, 0x64, 0x74, 0x65, 0x78, 0x74, 0x01, 0x18, 0x2A];
     /// let mut raw = Deserializer::from(vec);
@@ -687,7 +677,6 @@ impl<R: BufRead> Deserializer<R> {
     /// # Example
     ///
     /// ```
-    /// use io::Cursor;
     /// use cbor_event::{de::{*}, Len};
     ///
     /// let vec = vec![0xD8, 0x18, 0x64, 0x74, 0x65, 0x78, 0x74];

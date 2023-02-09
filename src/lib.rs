@@ -29,7 +29,6 @@
 //!
 //! ```
 //! use cbor_event::de::*;
-//! use std::io::Cursor;
 //!
 //! let vec = vec![0x43, 0x01, 0x02, 0x03];
 //! let mut raw = Deserializer::from(vec);
