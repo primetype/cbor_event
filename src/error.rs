@@ -29,7 +29,7 @@ pub enum Error {
     WrongLen(u64, len::Len, &'static str),
     InvalidTextError(FromUtf8Error),
     CannotParse(Type, Vec<u8>),
-    IoError(Error),
+    IoError(error::Error),
     TrailingData,
     InvalidIndefiniteString,
     InvalidLenPassed(len::Sz),
@@ -42,8 +42,8 @@ impl From<FromUtf8Error> for Error {
         Error::InvalidTextError(e)
     }
 }
-impl From<Error> for Error {
-    fn from(e: Error) -> Self {
+impl From<error::Error> for Error {
+    fn from(e: error::Error) -> Self {
         Error::IoError(e)
     }
 }
