@@ -1,4 +1,5 @@
 //! CBOR serialisation tooling
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::convert::TryInto;
@@ -380,7 +381,7 @@ impl<W: Write + Sized> Serializer<W> {
                     Sz::Eight => true,
                 };
                 if !fits {
-                    return Err(Error::InvalidLenPassed(sz));
+                    return Err(Box::new(Error::InvalidLenPassed(sz)));
                 }
                 sz
             }
@@ -497,7 +498,7 @@ impl<W: Write + Sized> Serializer<W> {
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
                 if sz_sum != bytes.len() as u64 {
-                    return Err(Error::InvalidIndefiniteString);
+                    return Err(Box::new(Error::InvalidIndefiniteString));
                 }
                 self.write_u8(Type::Bytes.to_byte(0x1f))?;
                 let mut start = 0;
@@ -549,7 +550,7 @@ impl<W: Write + Sized> Serializer<W> {
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
                 if sz_sum != bytes.len() as u64 {
-                    return Err(Error::InvalidIndefiniteString);
+                    return Err(Box::new(Error::InvalidIndefiniteString));
                 }
                 self.write_u8(Type::Text.to_byte(0x1f))?;
                 let mut start = 0;
