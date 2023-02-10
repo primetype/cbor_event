@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::string::{FromUtf8Error, String};
 use alloc::vec::Vec;
 use core::{error, fmt};
@@ -29,7 +30,7 @@ pub enum Error {
     WrongLen(u64, len::Len, &'static str),
     InvalidTextError(FromUtf8Error),
     CannotParse(Type, Vec<u8>),
-    IoError(dyn error::Error),
+    IoError(Box<dyn error::Error>),
     TrailingData,
     InvalidIndefiniteString,
     InvalidLenPassed(len::Sz),
@@ -42,8 +43,8 @@ impl From<FromUtf8Error> for Error {
         Error::InvalidTextError(e)
     }
 }
-impl From<dyn error::Error> for Error {
-    fn from(e: dyn error::Error) -> Self {
+impl From<Box<dyn error::Error>> for Error {
+    fn from(e: Box<dyn error::Error>) -> Self {
         Error::IoError(e)
     }
 }

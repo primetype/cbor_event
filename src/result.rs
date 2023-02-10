@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::error::Error;
 
 /// `Result` type for CBOR serialisation and deserialisation.
