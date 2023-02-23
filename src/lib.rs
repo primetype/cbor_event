@@ -63,7 +63,6 @@
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;
-extern crate acid_io;
 extern crate alloc;
 
 pub mod de;

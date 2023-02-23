@@ -1,6 +1,5 @@
 //! CBOR deserialisation tooling
 
-use acid_io::BufRead;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -13,11 +12,11 @@ use types::{Special, Type};
 pub trait Deserialize: Sized {
     /// method to implement to deserialise an object from the given
     /// `Deserializer`.
-    fn deserialize<R: BufRead>(reader: &mut Deserializer<R>) -> Result<Self>;
+    fn deserialize(reader: &mut Deserializer) -> Result<Self>;
 }
 
 impl Deserialize for u8 {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let n = raw.unsigned_integer()?;
         if n > u8::MAX as u64 {
             Err(Error::ExpectedU8)
@@ -28,7 +27,7 @@ impl Deserialize for u8 {
 }
 
 impl Deserialize for u16 {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let n = raw.unsigned_integer()?;
         if n > u16::MAX as u64 {
             Err(Error::ExpectedU16)
@@ -39,7 +38,7 @@ impl Deserialize for u16 {
 }
 
 impl Deserialize for u32 {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let n = raw.unsigned_integer()?;
         if n > u32::MAX as u64 {
             Err(Error::ExpectedU32)
@@ -50,37 +49,37 @@ impl Deserialize for u32 {
 }
 
 impl Deserialize for u64 {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         raw.unsigned_integer()
     }
 }
 
 impl Deserialize for bool {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         raw.bool()
     }
 }
 
 impl Deserialize for f32 {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         raw.float().map(|f| f as f32)
     }
 }
 
 impl Deserialize for f64 {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         raw.float()
     }
 }
 
 impl Deserialize for String {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         raw.text()
     }
 }
 
 impl<T: Deserialize> Deserialize for Vec<T> {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let mut vec = Vec::new();
         raw.array_with(|raw| {
             vec.push(Deserialize::deserialize(raw)?);
@@ -90,7 +89,7 @@ impl<T: Deserialize> Deserialize for Vec<T> {
     }
 }
 impl<K: Deserialize + Ord, V: Deserialize> Deserialize for BTreeMap<K, V> {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let mut vec = BTreeMap::new();
         raw.map_with(|raw| {
             let k = Deserialize::deserialize(raw)?;
@@ -103,7 +102,7 @@ impl<K: Deserialize + Ord, V: Deserialize> Deserialize for BTreeMap<K, V> {
 }
 
 impl<T: Deserialize> Deserialize for Option<T> {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         match raw.array()? {
             Len::Len(0) => Ok(None),
             Len::Len(1) => Ok(Some(raw.deserialize()?)),
@@ -172,33 +171,30 @@ impl<T: Deserialize> Deserialize for Option<T> {
 ///
 /// There is no explicit `panic!` in this code, except a few `unreachable!`.
 ///
-pub struct Deserializer<R>(R);
-impl<R> From<R> for Deserializer<R> {
-    fn from(r: R) -> Self {
-        Deserializer(r)
+pub struct Deserializer {
+    data: Vec<u8>,
+}
+impl From<Vec<u8>> for Deserializer {
+    fn from(r: Vec<u8>) -> Self {
+        Deserializer { data: r }
     }
 }
 
-impl<R> AsRef<R> for Deserializer<R> {
-    fn as_ref(&self) -> &R {
-        &self.0
+impl AsRef<Vec<u8>> for Deserializer {
+    fn as_ref(&self) -> &Vec<u8> {
+        &self.data
     }
 }
 
-impl<R> Deserializer<R> {
-    pub fn as_mut_ref(&mut self) -> &mut R {
-        &mut self.0
+impl Deserializer {
+    pub fn inner(self) -> Vec<u8> {
+        self.data
     }
-    pub fn inner(self) -> R {
-        self.0
-    }
-}
-impl<R: BufRead> Deserializer<R> {
+
     #[inline]
     fn get(&mut self, index: usize) -> Result<u8> {
-        let buf = self.0.fill_buf()?;
-        match buf.get(index) {
-            None => Err(Error::NotEnough(buf.len(), index)),
+        match self.data.get(index) {
+            None => Err(Error::NotEnough(self.data.len(), index)),
             Some(b) => Ok(*b),
         }
     }
@@ -338,7 +334,7 @@ impl<R: BufRead> Deserializer<R> {
     /// then lost, they cannot be retrieved for future references.
     #[inline]
     pub fn advance(&mut self, len: usize) -> Result<()> {
-        self.0.consume(len);
+        self.data.drain(..len);
 
         Ok(())
     }
@@ -469,7 +465,7 @@ impl<R: BufRead> Deserializer<R> {
                         LenSz::Indefinite => return Err(Error::InvalidIndefiniteString),
                         LenSz::Len(len, sz) => {
                             self.advance(1 + sz.bytes_following())?;
-                            self.0.by_ref().take(len as usize).read_to_end(&mut bytes)?;
+                            bytes.extend_from_slice(&self.data[len as usize..]);
                             chunk_lens.push((len, sz));
                         }
                     }
@@ -477,9 +473,8 @@ impl<R: BufRead> Deserializer<R> {
                 Ok((bytes, StringLenSz::Indefinite(chunk_lens)))
             }
             LenSz::Len(len, sz) => {
-                let mut bytes = vec![0; len as usize];
-                self.0.read_exact(&mut bytes)?;
-                Ok((bytes, StringLenSz::Len(sz)))
+                let bytes = &self.data[0..len as usize];
+                Ok((Vec::from(bytes), StringLenSz::Len(sz)))
             }
         }
     }
@@ -524,9 +519,8 @@ impl<R: BufRead> Deserializer<R> {
                             // rfc7049 forbids splitting UTF-8 characters across chunks so we must
                             // read each chunk separately as a definite encoded UTF-8 string
                             self.advance(1 + sz.bytes_following())?;
-                            let mut bytes = vec![0; len as usize];
-                            self.0.read_exact(&mut bytes)?;
-                            let chunk_text = String::from_utf8(bytes)?;
+                            let bytes = &self.data[0..len as usize];
+                            let chunk_text = String::from_utf8_lossy(bytes).into_owned();
                             text.push_str(&chunk_text);
                             chunk_lens.push((len, sz));
                         }
@@ -535,9 +529,8 @@ impl<R: BufRead> Deserializer<R> {
                 Ok((text, StringLenSz::Indefinite(chunk_lens)))
             }
             LenSz::Len(len, sz) => {
-                let mut bytes = vec![0; len as usize];
-                self.0.read_exact(&mut bytes)?;
-                let text = String::from_utf8(bytes)?;
+                let bytes = &self.data[0..len as usize];
+                let text = String::from_utf8_lossy(bytes).into_owned();
                 Ok((text, StringLenSz::Len(sz)))
             }
         }
@@ -808,7 +801,7 @@ impl<R: BufRead> Deserializer<R> {
         T: Deserialize,
     {
         let v = self.deserialize()?;
-        if !self.0.fill_buf()?.is_empty() {
+        if !self.data.is_empty() {
             Err(Error::TrailingData)
         } else {
             Ok(v)
@@ -822,7 +815,7 @@ macro_rules! deserialize_array {
     ( $( $x:expr ),* ) => {
         $(
             impl Deserialize for [u8; $x] {
-                fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+                fn deserialize(raw: &mut Deserializer) -> Result<Self> {
                     let mut bytes = [0u8; $x];
 
                     let len = raw.array()?;

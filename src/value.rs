@@ -9,13 +9,11 @@
 //!
 //! This is why all the objects here are marked as deprecated
 
-use acid_io::BufRead;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::fmt::Write;
 #[cfg(test)]
 use core::iter::repeat_with;
 
@@ -48,10 +46,7 @@ impl ObjectKey {
     }
 }
 impl Serialize for ObjectKey {
-    fn serialize<'se, W: Write + Sized>(
-        &self,
-        serializer: &'se mut Serializer<W>,
-    ) -> Result<&'se mut Serializer<W>> {
+    fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
         match self {
             ObjectKey::Integer(ref v) => serializer.write_unsigned_integer(*v),
             ObjectKey::Bytes(ref v) => serializer.write_bytes(v),
@@ -60,7 +55,7 @@ impl Serialize for ObjectKey {
     }
 }
 impl Deserialize for ObjectKey {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(ObjectKey::Integer(raw.unsigned_integer()?)),
             Type::Bytes => Ok(ObjectKey::Bytes(raw.bytes()?)),
@@ -94,10 +89,7 @@ pub enum Value {
 }
 
 impl Serialize for Value {
-    fn serialize<'se, W: Write + Sized>(
-        &self,
-        serializer: &'se mut Serializer<W>,
-    ) -> Result<&'se mut Serializer<W>> {
+    fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
         match self {
             Value::U64(ref v) => serializer.write_unsigned_integer(*v),
             Value::I64(ref v) => serializer.write_negative_integer(*v),
@@ -137,7 +129,7 @@ impl Serialize for Value {
     }
 }
 impl Deserialize for Value {
-    fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self> {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(Value::U64(raw.unsigned_integer()?)),
             Type::NegativeInteger => Ok(Value::I64(raw.negative_integer()?)),

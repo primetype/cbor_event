@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::string::{FromUtf8Error, String};
 use alloc::vec::Vec;
 use core::{error, fmt};
@@ -30,7 +29,6 @@ pub enum Error {
     WrongLen(u64, len::Len, &'static str),
     InvalidTextError(FromUtf8Error),
     CannotParse(Type, Vec<u8>),
-    IoError(Box<dyn error::Error>),
     TrailingData,
     InvalidIndefiniteString,
     InvalidLenPassed(len::Sz),
@@ -41,11 +39,6 @@ pub enum Error {
 impl From<FromUtf8Error> for Error {
     fn from(e: FromUtf8Error) -> Self {
         Error::InvalidTextError(e)
-    }
-}
-impl From<Box<dyn error::Error>> for Error {
-    fn from(e: Box<dyn error::Error>) -> Self {
-        Error::IoError(e)
     }
 }
 
@@ -93,7 +86,6 @@ impl fmt::Display for Error {
                 "Invalid cbor: cannot parse the cbor object `{:?}' with the following bytes {:?}",
                 t, bytes
             ),
-            IoError(_io_error) => write!(f, "Invalid cbor: I/O error"),
             TrailingData => write!(f, "Unexpected trailing data in CBOR"),
             InvalidIndefiniteString => write!(f, "Invalid cbor: Invalid indefinite string format"),
             InvalidLenPassed(sz) => write!(f, "Invalid length for serialization: {:?}", sz),
@@ -106,7 +98,6 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn cause(&self) -> Option<&dyn error::Error> {
         match self {
-            Error::IoError(ref error) => Some(error),
             Error::InvalidTextError(ref error) => Some(error),
             _ => None,
         }
