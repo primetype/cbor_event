@@ -2,7 +2,6 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::convert::TryInto;
-use core::fmt::Write;
 
 use error::Error;
 use len::{Len, LenSz, StringLenSz, Sz};
@@ -113,7 +112,6 @@ where
     K: 'a + Serialize,
     V: 'a + Serialize,
     C: Iterator<Item = (&'a K, &'a V)> + ExactSizeIterator,
-    W: Write + Sized,
 {
     serializer.write_map(Len::Len(data.len() as u64))?;
     for element in data {
@@ -152,7 +150,6 @@ where
     K: 'a + Serialize,
     V: 'a + Serialize,
     C: Iterator<Item = (&'a K, &'a V)>,
-    W: Write + Sized,
 {
     serializer.write_map(Len::Indefinite)?;
     for element in data {
@@ -171,7 +168,6 @@ pub fn serialize_indefinite_array<'a, C, T, W>(
 where
     T: 'a + Serialize,
     C: Iterator<Item = &'a T>,
-    W: Write + Sized,
 {
     serializer.write_array(Len::Indefinite)?;
     for element in data {
@@ -196,10 +192,9 @@ where
 /// serializer.write_bytes(&se.finalize()).unwrap();
 /// ```
 ///
-pub fn serialize_cbor_in_cbor<T, W>(data: T, serializer: &mut Serializer) -> Result<&mut Serializer>
+pub fn serialize_cbor_in_cbor<T>(data: T, serializer: &mut Serializer) -> Result<&mut Serializer>
 where
     T: Serialize,
-    W: Write + Sized,
 {
     let mut se = Serializer::new_vec();
     data.serialize(&mut se)?;
@@ -218,13 +213,6 @@ const DEFAULT_CAPACITY: usize = 512;
 #[derive(Debug)]
 pub struct Serializer {
     data: Vec<u8>,
-}
-
-impl Write for Serializer {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.data.extend_from_slice(s.as_bytes());
-        Ok(())
-    }
 }
 
 impl Serializer {
