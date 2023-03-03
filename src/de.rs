@@ -474,7 +474,9 @@ impl Deserializer {
             }
             LenSz::Len(len, sz) => {
                 let bytes = &self.data[0..len as usize];
-                Ok((Vec::from(bytes), StringLenSz::Len(sz)))
+                let bytes_vec = Vec::from(bytes);
+                self.advance(len as usize)?;
+                Ok((bytes_vec, StringLenSz::Len(sz)))
             }
         }
     }
@@ -521,6 +523,7 @@ impl Deserializer {
                             self.advance(1 + sz.bytes_following())?;
                             let bytes = &self.data[0..len as usize];
                             let chunk_text = String::from_utf8_lossy(bytes).into_owned();
+                            self.advance(len as usize)?;
                             text.push_str(&chunk_text);
                             chunk_lens.push((len, sz));
                         }
@@ -531,6 +534,7 @@ impl Deserializer {
             LenSz::Len(len, sz) => {
                 let bytes = &self.data[0..len as usize];
                 let text = String::from_utf8_lossy(bytes).into_owned();
+                self.advance(len as usize)?;
                 Ok((text, StringLenSz::Len(sz)))
             }
         }
