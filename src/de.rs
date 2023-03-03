@@ -465,7 +465,8 @@ impl Deserializer {
                         LenSz::Indefinite => return Err(Error::InvalidIndefiniteString),
                         LenSz::Len(len, sz) => {
                             self.advance(1 + sz.bytes_following())?;
-                            bytes.extend_from_slice(&self.data[len as usize..]);
+                            bytes.extend_from_slice(&self.data[0..len as usize]);
+                            self.advance(len as usize)?;
                             chunk_lens.push((len, sz));
                         }
                     }
