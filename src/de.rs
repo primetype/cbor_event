@@ -4,6 +4,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
+use core::fmt::{Display, Formatter};
 use error::Error;
 use len::{Len, LenSz, StringLenSz, Sz};
 use result::Result;
@@ -183,6 +184,19 @@ impl From<Vec<u8>> for Deserializer {
 impl AsRef<Vec<u8>> for Deserializer {
     fn as_ref(&self) -> &Vec<u8> {
         &self.data
+    }
+}
+
+impl Display for Deserializer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.write_str(
+            &self
+                .data
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<Vec<String>>()
+                .join(" "),
+        )
     }
 }
 
