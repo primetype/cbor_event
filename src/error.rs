@@ -1,6 +1,6 @@
 use alloc::string::{FromUtf8Error, String};
 use alloc::vec::Vec;
-use core::{error, fmt};
+use core::fmt;
 
 use len;
 use types::Type;
@@ -91,15 +91,6 @@ impl fmt::Display for Error {
             InvalidLenPassed(sz) => write!(f, "Invalid length for serialization: {:?}", sz),
             CustomError(err) => write!(f, "Invalid cbor: {}", err),
             InvalidNint(x) => write!(f, "Passed nint {} out of range", x),
-        }
-    }
-}
-
-impl error::Error for Error {
-    fn cause(&self) -> Option<&dyn error::Error> {
-        match self {
-            Error::InvalidTextError(ref error) => Some(error),
-            _ => None,
         }
     }
 }
