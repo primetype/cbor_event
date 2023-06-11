@@ -422,9 +422,9 @@ impl Serializer {
     pub fn write_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) -> Result<&mut Self> {
         let bytes = bytes.as_ref();
         self.write_type_definite(Type::Bytes, bytes.len() as u64, None)
-            .and_then(|s| {
+            .map(|s| {
                 s.data.extend_from_slice(bytes);
-                Ok(s)
+                s
             })
     }
 
@@ -440,9 +440,9 @@ impl Serializer {
         match sz {
             StringLenSz::Len(sz) => self
                 .write_type_definite(Type::Bytes, bytes.len() as u64, Some(sz))
-                .and_then(|s| {
+                .map(|s| {
                     s.data.extend_from_slice(bytes);
-                    Ok(s)
+                    s
                 }),
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
@@ -478,9 +478,9 @@ impl Serializer {
     pub fn write_text<S: AsRef<str>>(&mut self, text: S) -> Result<&mut Self> {
         let bytes = text.as_ref().as_bytes();
         self.write_type_definite(Type::Text, bytes.len() as u64, None)
-            .and_then(|s| {
+            .map(|s| {
                 s.data.extend_from_slice(bytes);
-                Ok(s)
+                s
             })
     }
 
@@ -492,9 +492,9 @@ impl Serializer {
         match sz {
             StringLenSz::Len(sz) => self
                 .write_type_definite(Type::Text, bytes.len() as u64, Some(sz))
-                .and_then(|s| {
+                .map(|s| {
                     s.data.extend_from_slice(bytes);
-                    Ok(s)
+                    s
                 }),
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
