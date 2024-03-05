@@ -1,4 +1,6 @@
-use std::{error, fmt};
+use alloc::string::{FromUtf8Error, String};
+use alloc::vec::Vec;
+use core::fmt;
 
 use len;
 use types::Type;
@@ -25,9 +27,8 @@ pub enum Error {
     UnknownLenType(u8),
     IndefiniteLenNotSupported(Type),
     WrongLen(u64, len::Len, &'static str),
-    InvalidTextError(::std::string::FromUtf8Error),
+    InvalidTextError(FromUtf8Error),
     CannotParse(Type, Vec<u8>),
-    IoError(::std::io::Error),
     TrailingData,
     InvalidIndefiniteString,
     InvalidLenPassed(len::Sz),
@@ -35,14 +36,9 @@ pub enum Error {
 
     CustomError(String),
 }
-impl From<::std::string::FromUtf8Error> for Error {
-    fn from(e: ::std::string::FromUtf8Error) -> Self {
+impl From<FromUtf8Error> for Error {
+    fn from(e: FromUtf8Error) -> Self {
         Error::InvalidTextError(e)
-    }
-}
-impl From<::std::io::Error> for Error {
-    fn from(e: ::std::io::Error) -> Self {
-        Error::IoError(e)
     }
 }
 
@@ -90,22 +86,11 @@ impl fmt::Display for Error {
                 "Invalid cbor: cannot parse the cbor object `{:?}' with the following bytes {:?}",
                 t, bytes
             ),
-            IoError(_io_error) => write!(f, "Invalid cbor: I/O error"),
             TrailingData => write!(f, "Unexpected trailing data in CBOR"),
             InvalidIndefiniteString => write!(f, "Invalid cbor: Invalid indefinite string format"),
             InvalidLenPassed(sz) => write!(f, "Invalid length for serialization: {:?}", sz),
             CustomError(err) => write!(f, "Invalid cbor: {}", err),
             InvalidNint(x) => write!(f, "Passed nint {} out of range", x),
-        }
-    }
-}
-
-impl error::Error for Error {
-    fn cause(&self) -> Option<&dyn error::Error> {
-        match self {
-            Error::IoError(ref error) => Some(error),
-            Error::InvalidTextError(ref error) => Some(error),
-            _ => None,
         }
     }
 }

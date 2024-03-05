@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 /// CBOR len: either a fixed size or an indefinite length.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Len {

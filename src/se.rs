@@ -1,5 +1,7 @@
 //! CBOR serialisation tooling
-use std::io::Write;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::convert::TryInto;
 
 use error::Error;
 use len::{Len, LenSz, StringLenSz, Sz};
@@ -7,88 +9,55 @@ use result::Result;
 use types::{Special, Type};
 
 pub trait Serialize {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>>;
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer>;
 }
 impl<'a, T: Serialize> Serialize for &'a T {
-    fn serialize<'se, W: Write + Sized>(
-        &self,
-        serializer: &'se mut Serializer<W>,
-    ) -> Result<&'se mut Serializer<W>> {
+    fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
         serializer.serialize(*self)
     }
 }
 impl Serialize for u64 {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_unsigned_integer(*self)
     }
 }
 impl Serialize for u32 {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_unsigned_integer((*self) as u64)
     }
 }
 impl Serialize for u16 {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_unsigned_integer((*self) as u64)
     }
 }
 impl Serialize for u8 {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_unsigned_integer((*self) as u64)
     }
 }
 impl Serialize for bool {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_special(Special::Bool(*self))
     }
 }
 impl Serialize for f32 {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_special(Special::Float((*self) as f64))
     }
 }
 impl Serialize for f64 {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_special(Special::Float(*self))
     }
 }
 impl Serialize for String {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_text(self)
     }
 }
 impl<'a> Serialize for &'a [u8] {
-    fn serialize<'b, W: Write + Sized>(
-        &self,
-        serializer: &'b mut Serializer<W>,
-    ) -> Result<&'b mut Serializer<W>> {
+    fn serialize<'b>(&self, serializer: &'b mut Serializer) -> Result<&'b mut Serializer> {
         serializer.write_bytes(self)
     }
 }
@@ -97,10 +66,7 @@ where
     A: Serialize,
     B: Serialize,
 {
-    fn serialize<'b, W: Write + Sized>(
-        &self,
-        serializer: &'b mut Serializer<W>,
-    ) -> Result<&'b mut Serializer<W>> {
+    fn serialize<'b>(&self, serializer: &'b mut Serializer) -> Result<&'b mut Serializer> {
         serializer
             .write_array(Len::Len(2))?
             .serialize(self.0)?
@@ -113,10 +79,7 @@ where
     B: Serialize,
     C: Serialize,
 {
-    fn serialize<'b, W: Write + Sized>(
-        &self,
-        serializer: &'b mut Serializer<W>,
-    ) -> Result<&'b mut Serializer<W>> {
+    fn serialize<'b>(&self, serializer: &'b mut Serializer) -> Result<&'b mut Serializer> {
         serializer
             .write_array(Len::Len(3))?
             .serialize(self.0)?
@@ -129,10 +92,7 @@ impl<T> Serialize for Option<T>
 where
     T: Serialize,
 {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> Result<&'a mut Serializer<W>> {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         match self {
             None => serializer.write_array(Len::Len(0)),
             Some(x) => serializer.write_array(Len::Len(1))?.serialize(x),
@@ -146,13 +106,12 @@ where
 ///
 pub fn serialize_fixed_map<'a, C, K, V, W>(
     data: C,
-    serializer: &mut Serializer<W>,
-) -> Result<&mut Serializer<W>>
+    serializer: &mut Serializer,
+) -> Result<&mut Serializer>
 where
     K: 'a + Serialize,
     V: 'a + Serialize,
     C: Iterator<Item = (&'a K, &'a V)> + ExactSizeIterator,
-    W: Write + Sized,
 {
     serializer.write_map(Len::Len(data.len() as u64))?;
     for element in data {
@@ -166,14 +125,13 @@ where
 ///
 /// i.e. the size must be known ahead of time
 ///
-pub fn serialize_fixed_array<'a, C, T, W>(
+pub fn serialize_fixed_array<'a, C, T>(
     data: C,
-    serializer: &mut Serializer<W>,
-) -> Result<&mut Serializer<W>>
+    serializer: &mut Serializer,
+) -> Result<&mut Serializer>
 where
     T: 'a + Serialize,
     C: Iterator<Item = &'a T> + ExactSizeIterator,
-    W: Write + Sized,
 {
     serializer.write_array(Len::Len(data.len() as u64))?;
     for element in data {
@@ -186,13 +144,12 @@ where
 ///
 pub fn serialize_indefinite_map<'a, C, K, V, W>(
     data: C,
-    serializer: &mut Serializer<W>,
-) -> Result<&mut Serializer<W>>
+    serializer: &mut Serializer,
+) -> Result<&mut Serializer>
 where
     K: 'a + Serialize,
     V: 'a + Serialize,
     C: Iterator<Item = (&'a K, &'a V)>,
-    W: Write + Sized,
 {
     serializer.write_map(Len::Indefinite)?;
     for element in data {
@@ -206,12 +163,11 @@ where
 ///
 pub fn serialize_indefinite_array<'a, C, T, W>(
     data: C,
-    serializer: &mut Serializer<W>,
-) -> Result<&mut Serializer<W>>
+    serializer: &mut Serializer,
+) -> Result<&mut Serializer>
 where
     T: 'a + Serialize,
     C: Iterator<Item = &'a T>,
-    W: Write + Sized,
 {
     serializer.write_array(Len::Indefinite)?;
     for element in data {
@@ -236,13 +192,9 @@ where
 /// serializer.write_bytes(&se.finalize()).unwrap();
 /// ```
 ///
-pub fn serialize_cbor_in_cbor<T, W>(
-    data: T,
-    serializer: &mut Serializer<W>,
-) -> Result<&mut Serializer<W>>
+pub fn serialize_cbor_in_cbor<T>(data: T, serializer: &mut Serializer) -> Result<&mut Serializer>
 where
     T: Serialize,
-    W: Write + Sized,
 {
     let mut se = Serializer::new_vec();
     data.serialize(&mut se)?;
@@ -259,8 +211,21 @@ const DEFAULT_CAPACITY: usize = 512;
 /// [`std::io::Write`](https://doc.rust-lang.org/std/io/trait.Write.html).
 ///
 #[derive(Debug)]
-pub struct Serializer<W: Write + Sized>(W);
-impl Serializer<Vec<u8>> {
+pub struct Serializer {
+    data: Vec<u8>,
+}
+
+impl Serializer {
+    /// extend the serializer with the given bytes
+    ///
+    /// This is not encoding the given bytes in the CBOR format. More a way
+    /// to add already CBOR encoded data or to add any bytes that may suite
+    /// your protocol.
+    pub fn write_raw_bytes(&mut self, bytes: &[u8]) -> Result<&mut Self> {
+        self.data.extend_from_slice(bytes);
+        Ok(self)
+    }
+
     /// create a new serializer.
     ///
     /// ```
@@ -272,22 +237,10 @@ impl Serializer<Vec<u8>> {
     pub fn new_vec() -> Self {
         Serializer::new(Vec::with_capacity(DEFAULT_CAPACITY))
     }
-}
-
-impl<W: Write + Sized> Serializer<W> {
-    /// extend the serializer with the given bytes
-    ///
-    /// This is not encoding the given bytes in the CBOR format. More a way
-    /// to add already CBOR encoded data or to add any bytes that may suite
-    /// your protocol.
-    pub fn write_raw_bytes(&mut self, bytes: &[u8]) -> Result<&mut Self> {
-        self.0.write_all(bytes)?;
-        Ok(self)
-    }
 
     #[inline]
-    pub fn new(w: W) -> Self {
-        Serializer(w)
+    pub fn new(w: Vec<u8>) -> Self {
+        Serializer { data: w }
     }
 
     /// finalize the serializer, returning the serializer bytes
@@ -302,39 +255,39 @@ impl<W: Write + Sized> Serializer<W> {
     /// # assert!(bytes.is_empty());
     /// ```
     #[inline]
-    pub fn finalize(self) -> W {
-        self.0
+    pub fn finalize(self) -> Vec<u8> {
+        self.data
     }
 
     #[inline]
     fn write_u8(&mut self, value: u8) -> Result<&mut Self> {
-        self.0.write_all(&[value][..])?;
+        self.data.extend_from_slice(&[value][..]);
         Ok(self)
     }
 
     #[inline]
     fn write_u16(&mut self, value: u16) -> Result<&mut Self> {
-        self.0
-            .write_all(&[((value & 0xFF_00) >> 8) as u8, (value & 0x00_FF) as u8][..])?;
+        self.data
+            .extend_from_slice(&[((value & 0xFF_00) >> 8) as u8, (value & 0x00_FF) as u8][..]);
         Ok(self)
     }
 
     #[inline]
     fn write_u32(&mut self, value: u32) -> Result<&mut Self> {
-        self.0.write_all(
+        self.data.extend_from_slice(
             &[
                 ((value & 0xFF_00_00_00) >> 24) as u8,
                 ((value & 0x00_FF_00_00) >> 16) as u8,
                 ((value & 0x00_00_FF_00) >> 8) as u8,
                 (value & 0x00_00_00_FF) as u8,
             ][..],
-        )?;
+        );
         Ok(self)
     }
 
     #[inline]
     fn write_u64(&mut self, value: u64) -> Result<&mut Self> {
-        self.0.write_all(
+        self.data.extend_from_slice(
             &[
                 ((value & 0xFF_00_00_00_00_00_00_00) >> 56) as u8,
                 ((value & 0x00_FF_00_00_00_00_00_00) >> 48) as u8,
@@ -345,13 +298,13 @@ impl<W: Write + Sized> Serializer<W> {
                 ((value & 0x00_00_00_00_00_00_FF_00) >> 8) as u8,
                 (value & 0x00_00_00_00_00_00_00_FF) as u8,
             ][..],
-        )?;
+        );
         Ok(self)
     }
 
     #[inline]
     fn write_f64(&mut self, value: f64) -> Result<&mut Self> {
-        self.0.write_all(&value.to_be_bytes())?;
+        self.data.extend_from_slice(&value.to_be_bytes());
         Ok(self)
     }
 
@@ -448,7 +401,6 @@ impl<W: Write + Sized> Serializer<W> {
     ///
     /// `value` must be within -1 and -u64::MAX -1 to fit into CBOR nint
     pub fn write_negative_integer_sz(&mut self, value: i128, sz: Sz) -> Result<&mut Self> {
-        use std::convert::TryInto;
         let value_u64 = (-value - 1)
             .try_into()
             .map_err(|_| Error::InvalidNint(value))?;
@@ -470,9 +422,9 @@ impl<W: Write + Sized> Serializer<W> {
     pub fn write_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) -> Result<&mut Self> {
         let bytes = bytes.as_ref();
         self.write_type_definite(Type::Bytes, bytes.len() as u64, None)
-            .and_then(|s| {
-                s.0.write_all(bytes)?;
-                Ok(s)
+            .map(|s| {
+                s.data.extend_from_slice(bytes);
+                s
             })
     }
 
@@ -488,9 +440,9 @@ impl<W: Write + Sized> Serializer<W> {
         match sz {
             StringLenSz::Len(sz) => self
                 .write_type_definite(Type::Bytes, bytes.len() as u64, Some(sz))
-                .and_then(|s| {
-                    s.0.write_all(bytes)?;
-                    Ok(s)
+                .map(|s| {
+                    s.data.extend_from_slice(bytes);
+                    s
                 }),
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
@@ -526,9 +478,9 @@ impl<W: Write + Sized> Serializer<W> {
     pub fn write_text<S: AsRef<str>>(&mut self, text: S) -> Result<&mut Self> {
         let bytes = text.as_ref().as_bytes();
         self.write_type_definite(Type::Text, bytes.len() as u64, None)
-            .and_then(|s| {
-                s.0.write_all(bytes)?;
-                Ok(s)
+            .map(|s| {
+                s.data.extend_from_slice(bytes);
+                s
             })
     }
 
@@ -540,9 +492,9 @@ impl<W: Write + Sized> Serializer<W> {
         match sz {
             StringLenSz::Len(sz) => self
                 .write_type_definite(Type::Text, bytes.len() as u64, Some(sz))
-                .and_then(|s| {
-                    s.0.write_all(bytes)?;
-                    Ok(s)
+                .map(|s| {
+                    s.data.extend_from_slice(bytes);
+                    s
                 }),
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
@@ -769,10 +721,10 @@ macro_rules! serialize_array {
     ( $( $x:expr ),* ) => {
         $(
             impl<T: Serialize> Serialize for [T; $x] {
-                fn serialize<'b, W: Write + Sized>(
+                fn serialize<'b>(
                     &self,
-                    serializer: &'b mut Serializer<W>,
-                ) -> Result<&'b mut Serializer<W>> {
+                    serializer: &'b mut Serializer,
+                ) -> Result<&'b mut Serializer> {
                     serialize_fixed_array(self.iter(), serializer)
                 }
             }
@@ -789,6 +741,8 @@ serialize_array!(
 #[cfg(test)]
 mod test {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn unsigned_integer_0() {
@@ -922,9 +876,6 @@ mod test {
             .write_special(cbor_type)
             .expect("serialize a special");
         let bytes = serializer.finalize();
-        println!("serializing: {:?}", cbor_type);
-        println!("  - expected: {:?}", result);
-        println!("  - got:      {:?}", bytes);
         bytes == result
     }
 

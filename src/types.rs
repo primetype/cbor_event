@@ -1,3 +1,4 @@
+use alloc::format;
 use error::Error;
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};

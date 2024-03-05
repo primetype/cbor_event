@@ -29,10 +29,9 @@
 //!
 //! ```
 //! use cbor_event::de::*;
-//! use std::io::Cursor;
 //!
 //! let vec = vec![0x43, 0x01, 0x02, 0x03];
-//! let mut raw = Deserializer::from(Cursor::new(vec));
+//! let mut raw = Deserializer::from(vec);
 //! let bytes = raw.bytes().unwrap();
 //!
 //! # assert_eq!(bytes.as_slice(), [1,2,3].as_ref());
@@ -59,9 +58,11 @@
 //! # assert_eq!(bytes, [0x2b].as_ref());
 //! ```
 
+#![no_std]
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;
+extern crate alloc;
 
 pub mod de;
 mod error;
@@ -96,7 +97,7 @@ pub fn test_encode_decode<V: Sized + PartialEq + Serialize + Deserialize>(v: &V)
     v.serialize(&mut se)?;
     let bytes = se.finalize();
 
-    let mut raw = de::Deserializer::from(std::io::Cursor::new(bytes));
+    let mut raw = de::Deserializer::from(bytes);
     let v_ = Deserialize::deserialize(&mut raw)?;
 
     Ok(v == &v_)
