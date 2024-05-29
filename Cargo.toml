@@ -4,13 +4,16 @@ version = "2.4.0"
 authors = ["Nicolas Di Prima <nicolas@primetype.co.uk>", "Vincent Hanquez <vincent@typed.io>"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-categories = [ "parsing", "encoding" ]
+categories = ["parsing", "encoding"]
 keywords = ["cbor", "binary", "format", "encoding"]
 repository = "https://github.com/primetype/cbor_event"
 homepage = "https://github.com/primetype/cbor_event#readme.md"
 description = """
 The CBOR Event library. There are no dependencies, all platforms are supported and it is wasm compatible.
 """
+
+[features]
+alloc = []
 
 [dev-dependencies]
 quickcheck = "0.7"

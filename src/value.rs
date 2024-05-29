@@ -9,10 +9,13 @@
 //!
 //! This is why all the objects here are marked as deprecated
 
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
 use alloc::collections::BTreeMap;
-use alloc::format;
-use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::string::{String, ToString};
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 #[cfg(test)]
 use core::iter::repeat_with;
@@ -30,11 +33,13 @@ use types::{Special, Type};
 /// CBOR Object key, represents the possible supported values for
 /// a CBOR key in a CBOR Map.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(feature = "alloc")]
 pub enum ObjectKey {
     Integer(u64),
     Bytes(Vec<u8>),
     Text(String),
 }
+#[cfg(feature = "alloc")]
 impl ObjectKey {
     /// convert the given `ObjectKey` into a CBOR [`Value`](./struct.Value.html)
     pub fn value(self) -> Value {
@@ -45,8 +50,12 @@ impl ObjectKey {
         }
     }
 }
-impl Serialize for ObjectKey {
-    fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
+#[cfg(feature = "alloc")]
+impl<'a> Serialize for ObjectKey {
+    fn serialize<'se>(
+        &self,
+        serializer: &'se mut Serializer<'se>,
+    ) -> Result<&'se mut Serializer<'se>> {
         match self {
             ObjectKey::Integer(ref v) => serializer.write_unsigned_integer(*v),
             ObjectKey::Bytes(ref v) => serializer.write_bytes(v),
@@ -54,16 +63,18 @@ impl Serialize for ObjectKey {
         }
     }
 }
-impl Deserialize for ObjectKey {
-    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
+#[cfg(feature = "alloc")]
+impl<'a> Deserialize<'a> for ObjectKey {
+    fn deserialize(raw: &mut Deserializer<'a>) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(ObjectKey::Integer(raw.unsigned_integer()?)),
-            Type::Bytes => Ok(ObjectKey::Bytes(raw.bytes()?)),
-            Type::Text => Ok(ObjectKey::Text(raw.text()?)),
-            t => Err(Error::CustomError(format!(
-                "Type `{:?}' is not a support type for CBOR Map's key",
-                t
-            ))),
+            Type::Bytes => Ok(ObjectKey::Bytes(raw.bytes()?.to_vec())),
+            Type::Text => Ok(ObjectKey::Text(raw.text()?.to_string())),
+            t => Err(Error::CustomError(
+                format_args!("Type `{:?}' is not a support type for CBOR Map's key", t)
+                    .as_str()
+                    .unwrap(),
+            )),
         }
     }
 }
@@ -75,6 +86,7 @@ impl Deserialize for ObjectKey {
 /// so. However it is handy for debugging or reverse a given protocol.
 ///
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[cfg(feature = "alloc")]
 pub enum Value {
     U64(u64),
     I64(i64),
@@ -88,53 +100,58 @@ pub enum Value {
     Special(Special),
 }
 
+#[cfg(feature = "alloc")]
 impl Serialize for Value {
-    fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
+    fn serialize<'se>(
+        &'se self,
+        serializer: &'se mut Serializer<'se>,
+    ) -> Result<&'se mut Serializer> {
         match self {
             Value::U64(ref v) => serializer.write_unsigned_integer(*v),
             Value::I64(ref v) => serializer.write_negative_integer(*v),
             Value::Bytes(ref v) => serializer.write_bytes(v),
             Value::Text(ref v) => serializer.write_text(v),
             Value::Array(ref v) => {
-                serializer.write_array(Len::Len(v.len() as u64))?;
+                let mut s = serializer.write_array(Len::Len(v.len() as u64))?;
                 for element in v {
-                    serializer.serialize(element)?;
+                    s = s.serialize(element)?;
                 }
-                Ok(serializer)
+                Ok(s)
             }
             Value::IArray(ref v) => {
-                serializer.write_array(Len::Indefinite)?;
+                let mut s = serializer.write_array(Len::Indefinite)?;
                 for element in v {
-                    serializer.serialize(element)?;
+                    s = s.serialize(element)?;
                 }
-                serializer.write_special(Special::Break)
+                s.write_special(Special::Break)
             }
             Value::Object(ref v) => {
-                serializer.write_map(Len::Len(v.len() as u64))?;
+                let mut s = serializer.write_map(Len::Len(v.len() as u64))?;
                 for element in v {
-                    serializer.serialize(element.0)?.serialize(element.1)?;
+                    s = s.serialize(element.0)?.serialize(element.1)?;
                 }
-                Ok(serializer)
+                Ok(s)
             }
             Value::IObject(ref v) => {
-                serializer.write_map(Len::Indefinite)?;
+                let mut s = serializer.write_map(Len::Indefinite)?;
                 for element in v {
-                    serializer.serialize(element.0)?.serialize(element.1)?;
+                    s = s.serialize(element.0)?.serialize(element.1)?;
                 }
-                serializer.write_special(Special::Break)
+                s.write_special(Special::Break)
             }
             Value::Tag(ref tag, ref v) => serializer.write_tag(*tag)?.serialize(v.as_ref()),
             Value::Special(ref v) => serializer.write_special(*v),
         }
     }
 }
-impl Deserialize for Value {
-    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
+#[cfg(feature = "alloc")]
+impl<'a> Deserialize<'a> for Value {
+    fn deserialize(raw: &mut Deserializer<'a>) -> Result<Self> {
         match raw.cbor_type()? {
             Type::UnsignedInteger => Ok(Value::U64(raw.unsigned_integer()?)),
             Type::NegativeInteger => Ok(Value::I64(raw.negative_integer()?)),
-            Type::Bytes => Ok(Value::Bytes(raw.bytes()?)),
-            Type::Text => Ok(Value::Text(raw.text()?)),
+            Type::Bytes => Ok(Value::Bytes(raw.bytes()?.to_vec())),
+            Type::Text => Ok(Value::Text(raw.text()?.to_string())),
             Type::Array => {
                 let len = raw.array()?;
                 let mut vec = Vec::new();
@@ -200,6 +217,7 @@ impl Deserialize for Value {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(test)]
 impl Arbitrary for ObjectKey {
     fn arbitrary<G: Gen>(g: &mut G) -> Self {
@@ -212,6 +230,7 @@ impl Arbitrary for ObjectKey {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(test)]
 fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
     match u8::arbitrary(g) % 5 {
@@ -224,6 +243,7 @@ fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(test)]
 fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
     if counter == 0 {
@@ -286,6 +306,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(test)]
 impl Arbitrary for Value {
     fn arbitrary<G: Gen>(g: &mut G) -> Self {
@@ -293,6 +314,7 @@ impl Arbitrary for Value {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(test)]
 mod test {
     use alloc::borrow::ToOwned;
@@ -303,49 +325,49 @@ mod test {
 
     #[test]
     fn u64() {
-        assert!(test_encode_decode(&Value::U64(0)).unwrap());
-        assert!(test_encode_decode(&Value::U64(23)).unwrap());
-        assert!(test_encode_decode(&Value::U64(0xff)).unwrap());
-        assert!(test_encode_decode(&Value::U64(0x100)).unwrap());
-        assert!(test_encode_decode(&Value::U64(0xffff)).unwrap());
-        assert!(test_encode_decode(&Value::U64(0x10000)).unwrap());
-        assert!(test_encode_decode(&Value::U64(0xffffffff)).unwrap());
-        assert!(test_encode_decode(&Value::U64(0x100000000)).unwrap());
-        assert!(test_encode_decode(&Value::U64(0xffffffffffffffff)).unwrap());
+        assert!(test_encode_decode(Value::U64(0)).unwrap());
+        assert!(test_encode_decode(Value::U64(23)).unwrap());
+        assert!(test_encode_decode(Value::U64(0xff)).unwrap());
+        assert!(test_encode_decode(Value::U64(0x100)).unwrap());
+        assert!(test_encode_decode(Value::U64(0xffff)).unwrap());
+        assert!(test_encode_decode(Value::U64(0x10000)).unwrap());
+        assert!(test_encode_decode(Value::U64(0xffffffff)).unwrap());
+        assert!(test_encode_decode(Value::U64(0x100000000)).unwrap());
+        assert!(test_encode_decode(Value::U64(0xffffffffffffffff)).unwrap());
     }
 
     #[test]
     fn i64() {
-        assert!(test_encode_decode(&Value::I64(0)).unwrap());
-        assert!(test_encode_decode(&Value::I64(23)).unwrap());
-        assert!(test_encode_decode(&Value::I64(-99)).unwrap());
-        assert!(test_encode_decode(&Value::I64(99999)).unwrap());
-        assert!(test_encode_decode(&Value::I64(-9999999)).unwrap());
-        assert!(test_encode_decode(&Value::I64(-283749237289)).unwrap());
-        assert!(test_encode_decode(&Value::I64(93892929229)).unwrap());
+        assert!(test_encode_decode(Value::I64(0)).unwrap());
+        assert!(test_encode_decode(Value::I64(23)).unwrap());
+        assert!(test_encode_decode(Value::I64(-99)).unwrap());
+        assert!(test_encode_decode(Value::I64(99999)).unwrap());
+        assert!(test_encode_decode(Value::I64(-9999999)).unwrap());
+        assert!(test_encode_decode(Value::I64(-283749237289)).unwrap());
+        assert!(test_encode_decode(Value::I64(93892929229)).unwrap());
     }
 
     #[test]
     fn bytes() {
-        assert!(test_encode_decode(&Value::Bytes(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0; 23])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0; 24])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0; 256])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0; 10293])).unwrap());
-        assert!(test_encode_decode(&Value::Bytes(vec![0; 99999000])).unwrap());
+        assert!(test_encode_decode(Value::Bytes(vec![])).unwrap());
+        assert!(test_encode_decode(Value::Bytes(vec![0; 23])).unwrap());
+        assert!(test_encode_decode(Value::Bytes(vec![0; 24])).unwrap());
+        assert!(test_encode_decode(Value::Bytes(vec![0; 256])).unwrap());
+        assert!(test_encode_decode(Value::Bytes(vec![0; 10293])).unwrap());
+        assert!(test_encode_decode(Value::Bytes(vec![0; 99999000])).unwrap());
     }
 
     #[test]
     fn text() {
-        assert!(test_encode_decode(&Value::Text("".to_owned())).unwrap());
-        assert!(test_encode_decode(&Value::Text("hellow world".to_owned())).unwrap());
-        assert!(test_encode_decode(&Value::Text("some sentence, some sentence... some sentence...some sentence, some sentence... some sentence...".to_owned())).unwrap());
+        assert!(test_encode_decode(Value::Text("".to_owned())).unwrap());
+        assert!(test_encode_decode(Value::Text("hellow world".to_owned())).unwrap());
+        assert!(test_encode_decode(Value::Text("some sentence, some sentence... some sentence...some sentence, some sentence... some sentence...".to_owned())).unwrap());
     }
 
     #[test]
     fn array() {
-        assert!(test_encode_decode(&Value::Array(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::Array(vec![
+        assert!(test_encode_decode(Value::Array(vec![])).unwrap());
+        assert!(test_encode_decode(Value::Array(vec![
             Value::U64(0),
             Value::Text("some text".to_owned())
         ]))
@@ -354,8 +376,8 @@ mod test {
 
     #[test]
     fn iarray() {
-        assert!(test_encode_decode(&Value::IArray(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::IArray(vec![
+        assert!(test_encode_decode(Value::IArray(vec![])).unwrap());
+        assert!(test_encode_decode(Value::IArray(vec![
             Value::U64(0),
             Value::Text("some text".to_owned())
         ]))
@@ -364,16 +386,16 @@ mod test {
 
     #[test]
     fn tag() {
-        assert!(test_encode_decode(&Value::Tag(23, Box::new(Value::U64(0)))).unwrap());
-        assert!(test_encode_decode(&Value::Tag(24, Box::new(Value::Bytes(vec![0; 32])))).unwrap());
+        assert!(test_encode_decode(Value::Tag(23, Box::new(Value::U64(0)))).unwrap());
+        assert!(test_encode_decode(Value::Tag(24, Box::new(Value::Bytes(vec![0; 32])))).unwrap());
         assert!(
-            test_encode_decode(&Value::Tag(0x1ff, Box::new(Value::Bytes(vec![0; 624])))).unwrap()
+            test_encode_decode(Value::Tag(0x1ff, Box::new(Value::Bytes(vec![0; 624])))).unwrap()
         );
     }
 
     quickcheck! {
         fn property_encode_decode(value: Value) -> bool {
-            test_encode_decode(&value).unwrap()
+            test_encode_decode(value).unwrap()
         }
     }
 }

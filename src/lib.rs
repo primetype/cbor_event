@@ -59,10 +59,18 @@
 //! ```
 
 #![no_std]
+#[cfg(any(feature = "alloc", test))]
+extern crate alloc;
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;
-extern crate alloc;
+
+pub use de::Deserialize;
+pub use error::Error;
+pub use len::*;
+pub use result::Result;
+pub use se::Serialize;
+pub use types::*;
 
 pub mod de;
 mod error;
@@ -72,14 +80,6 @@ mod result;
 pub mod se;
 mod types;
 mod value;
-
-pub use de::Deserialize;
-pub use error::Error;
-pub use len::*;
-pub use result::Result;
-pub use se::Serialize;
-pub use types::*;
-pub use value::{ObjectKey, Value};
 
 const MAX_INLINE_ENCODING: u64 = 23;
 
@@ -92,10 +92,13 @@ const CBOR_PAYLOAD_LENGTH_U64: u8 = 27;
 /// [`Serialize`](./se/trait.Serialize.html) and
 /// [`Deserialize`](./de/trait.Deserialize.html).
 ///
-pub fn test_encode_decode<V: Sized + PartialEq + Serialize + Deserialize>(v: &V) -> Result<bool> {
-    let mut se = se::Serializer::new_vec();
-    v.serialize(&mut se)?;
-    let bytes = se.finalize();
+#[cfg(test)]
+pub fn test_encode_decode<'a, V: Sized + PartialEq + Serialize + Deserialize<'a>>(
+    v: &'a V,
+    data: &'a mut [u8],
+) -> Result<bool> {
+    let mut se = se::Serializer::new(data);
+    let bytes = v.serialize(&mut se)?.finalize();
 
     let mut raw = de::Deserializer::from(bytes);
     let v_ = Deserialize::deserialize(&mut raw)?;

@@ -1,6 +1,5 @@
-use alloc::string::{FromUtf8Error, String};
-use alloc::vec::Vec;
 use core::fmt;
+use core::str::Utf8Error;
 
 use len;
 use types::Type;
@@ -27,17 +26,19 @@ pub enum Error {
     UnknownLenType(u8),
     IndefiniteLenNotSupported(Type),
     WrongLen(u64, len::Len, &'static str),
-    InvalidTextError(FromUtf8Error),
-    CannotParse(Type, Vec<u8>),
+    InvalidTextError(Utf8Error),
+    CannotParse(Type, &'static [u8]),
     TrailingData,
     InvalidIndefiniteString,
     InvalidLenPassed(len::Sz),
     InvalidNint(i128),
 
-    CustomError(String),
+    NoAllocator,
+
+    CustomError(&'static str),
 }
-impl From<FromUtf8Error> for Error {
-    fn from(e: FromUtf8Error) -> Self {
+impl From<Utf8Error> for Error {
+    fn from(e: Utf8Error) -> Self {
         Error::InvalidTextError(e)
     }
 }
@@ -89,6 +90,7 @@ impl fmt::Display for Error {
             TrailingData => write!(f, "Unexpected trailing data in CBOR"),
             InvalidIndefiniteString => write!(f, "Invalid cbor: Invalid indefinite string format"),
             InvalidLenPassed(sz) => write!(f, "Invalid length for serialization: {:?}", sz),
+            NoAllocator => write!(f, "No allocator provided"),
             CustomError(err) => write!(f, "Invalid cbor: {}", err),
             InvalidNint(x) => write!(f, "Passed nint {} out of range", x),
         }

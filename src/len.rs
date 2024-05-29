@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-
 /// CBOR len: either a fixed size or an indefinite length.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Len {
@@ -91,8 +89,8 @@ impl LenSz {
 /// Definite encoding strings can vary by how many bytes are used to encode
 /// the length e.g. 4 can be represented inline in the type, or in 1/2/4/8
 /// additional bytes
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum StringLenSz {
-    Indefinite(Vec<(u64, Sz)>),
+#[derive(Debug, PartialEq, Eq)]
+pub enum StringLenSz<'a> {
+    Indefinite(&'a [(u64, Sz)]),
     Len(Sz),
 }
