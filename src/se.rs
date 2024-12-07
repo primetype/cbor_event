@@ -41,6 +41,11 @@ impl Serialize for bool {
         serializer.write_special(Special::Bool(*self))
     }
 }
+impl Serialize for f16 {
+    fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
+        serializer.write_special(Special::Float((*self) as f64))
+    }
+}
 impl Serialize for f32 {
     fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer> {
         serializer.write_special(Special::Float((*self) as f64))
@@ -299,6 +304,18 @@ impl Serializer {
                 (value & 0x00_00_00_00_00_00_00_FF) as u8,
             ][..],
         );
+        Ok(self)
+    }
+
+    #[inline]
+    fn write_f16(&mut self, value: f16) -> Result<&mut Self> {
+        self.data.extend_from_slice(&value.to_be_bytes());
+        Ok(self)
+    }
+
+    #[inline]
+    fn write_f32(&mut self, value: f32) -> Result<&mut Self> {
+        self.data.extend_from_slice(&value.to_be_bytes());
         Ok(self)
     }
 

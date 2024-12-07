@@ -59,6 +59,7 @@
 //! ```
 
 #![no_std]
+#![feature(f16)]
 #[cfg(test)]
 #[macro_use]
 extern crate quickcheck;

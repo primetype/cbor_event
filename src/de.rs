@@ -61,6 +61,12 @@ impl Deserialize for bool {
     }
 }
 
+impl Deserialize for f16 {
+    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
+        raw.float().map(|f| f as f16)
+    }
+}
+
 impl Deserialize for f32 {
     fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         raw.float().map(|f| f as f32)
@@ -772,9 +778,9 @@ impl Deserializer {
                 Ok(Special::Unassigned(b as u8))
             }
             0x19 => {
-                let f = self.u16(1)?;
+                let f = self.u16(1)? as u16;
                 self.advance(3)?;
-                Ok(Special::Float(f as f64))
+                Ok(Special::Float(f16::from_bits(f) as f64))
             }
             0x1a => {
                 let f = self.u32(1)? as u32;
@@ -972,6 +978,16 @@ mod test {
         let float = raw.float().unwrap();
 
         assert_eq!(float, 100000.0);
+    }
+
+    #[test]
+    fn float16() {
+        let vec = vec![0xf9, 0x3c, 0x00];
+        let mut raw = Deserializer::from(vec);
+
+        let float = raw.float().unwrap();
+
+        assert_eq!(float, 1.0);
     }
 
     #[test]
