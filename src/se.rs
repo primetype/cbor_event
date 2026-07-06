@@ -11,7 +11,7 @@ use types::{Special, Type};
 pub trait Serialize {
     fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer>;
 }
-impl<'a, T: Serialize> Serialize for &'a T {
+impl<T: Serialize> Serialize for &T {
     fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
         serializer.serialize(*self)
     }
@@ -56,7 +56,7 @@ impl Serialize for String {
         serializer.write_text(self)
     }
 }
-impl<'a> Serialize for &'a [u8] {
+impl Serialize for &[u8] {
     fn serialize<'b>(&self, serializer: &'b mut Serializer) -> Result<&'b mut Serializer> {
         serializer.write_bytes(self)
     }
@@ -198,7 +198,7 @@ where
 {
     let mut se = Serializer::new_vec();
     data.serialize(&mut se)?;
-    serializer.write_bytes(&se.finalize())
+    serializer.write_bytes(se.finalize())
 }
 
 // use a default capacity when allocating the Serializer to avoid small reallocation
@@ -421,11 +421,9 @@ impl Serializer {
     /// ```
     pub fn write_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) -> Result<&mut Self> {
         let bytes = bytes.as_ref();
-        self.write_type_definite(Type::Bytes, bytes.len() as u64, None)
-            .map(|s| {
-                s.data.extend_from_slice(bytes);
-                s
-            })
+        self.write_type_definite(Type::Bytes, bytes.len() as u64, None)?;
+        self.data.extend_from_slice(bytes);
+        Ok(self)
     }
 
     /// write the given object as bytes using a specific bytestring encoding
@@ -438,12 +436,11 @@ impl Serializer {
     ) -> Result<&mut Self> {
         let bytes = bytes.as_ref();
         match sz {
-            StringLenSz::Len(sz) => self
-                .write_type_definite(Type::Bytes, bytes.len() as u64, Some(sz))
-                .map(|s| {
-                    s.data.extend_from_slice(bytes);
-                    s
-                }),
+            StringLenSz::Len(sz) => {
+                self.write_type_definite(Type::Bytes, bytes.len() as u64, Some(sz))?;
+                self.data.extend_from_slice(bytes);
+                Ok(self)
+            }
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
                 if sz_sum != bytes.len() as u64 {
@@ -477,11 +474,9 @@ impl Serializer {
     /// ```
     pub fn write_text<S: AsRef<str>>(&mut self, text: S) -> Result<&mut Self> {
         let bytes = text.as_ref().as_bytes();
-        self.write_type_definite(Type::Text, bytes.len() as u64, None)
-            .map(|s| {
-                s.data.extend_from_slice(bytes);
-                s
-            })
+        self.write_type_definite(Type::Text, bytes.len() as u64, None)?;
+        self.data.extend_from_slice(bytes);
+        Ok(self)
     }
 
     /// write the given object as text using a specific string encoding
@@ -490,12 +485,11 @@ impl Serializer {
     pub fn write_text_sz<S: AsRef<str>>(&mut self, text: S, sz: StringLenSz) -> Result<&mut Self> {
         let bytes = text.as_ref().as_bytes();
         match sz {
-            StringLenSz::Len(sz) => self
-                .write_type_definite(Type::Text, bytes.len() as u64, Some(sz))
-                .map(|s| {
-                    s.data.extend_from_slice(bytes);
-                    s
-                }),
+            StringLenSz::Len(sz) => {
+                self.write_type_definite(Type::Text, bytes.len() as u64, Some(sz))?;
+                self.data.extend_from_slice(bytes);
+                Ok(self)
+            }
             StringLenSz::Indefinite(lens) => {
                 let sz_sum = lens.iter().fold(0, |sum, len| sum + len.0);
                 if sz_sum != bytes.len() as u64 {
@@ -854,7 +848,7 @@ mod test {
     fn bytes_0() {
         let mut serializer = Serializer::new_vec();
         serializer
-            .write_bytes(&vec![])
+            .write_bytes(vec![])
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x40].as_ref());
@@ -864,7 +858,7 @@ mod test {
     fn bytes_1() {
         let mut serializer = Serializer::new_vec();
         serializer
-            .write_bytes(&vec![0b101010])
+            .write_bytes(vec![0b101010])
             .expect("write unsigned integer");
         let bytes = serializer.finalize();
         assert_eq!(bytes, [0x41, 0b101010].as_ref());
@@ -1173,7 +1167,7 @@ mod test {
             .write_type_definite(Type::UnsignedInteger, u32::MAX as u64 + 1, Some(Sz::Four))
             .is_err());
         assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u64::MAX as u64, Some(Sz::Eight))
+            .write_type_definite(Type::UnsignedInteger, u64::MAX, Some(Sz::Eight))
             .is_ok());
     }
 }
