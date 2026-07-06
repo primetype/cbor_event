@@ -92,6 +92,9 @@ impl Serialize for Value {
     fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
         match self {
             Value::U64(ref v) => serializer.write_unsigned_integer(*v),
+            // RFC 8949 §3.1: CBOR has no signed-integer type; the sign picks
+            // the major type. Non-negative values must be major type 0
+            Value::I64(ref v) if *v >= 0 => serializer.write_unsigned_integer(*v as u64),
             Value::I64(ref v) => serializer.write_negative_integer(*v),
             Value::Bytes(ref v) => serializer.write_bytes(v),
             Value::Text(ref v) => serializer.write_text(v),
@@ -212,11 +215,24 @@ impl Arbitrary for ObjectKey {
     }
 }
 
+// canonical Value integers: non-negative integers are U64 (major type 0),
+// so generated I64 must be negative or the round-trip property would
+// compare I64(n) against the U64(n) it decodes to
+#[cfg(test)]
+fn arbitrary_negative_i64<G: Gen>(g: &mut G) -> i64 {
+    let v = i64::arbitrary(g);
+    if v < 0 {
+        v
+    } else {
+        -v - 1
+    }
+}
+
 #[cfg(test)]
 fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
     match u8::arbitrary(g) % 5 {
         0 => Value::U64(Arbitrary::arbitrary(g)),
-        1 => Value::I64(Arbitrary::arbitrary(g)),
+        1 => Value::I64(arbitrary_negative_i64(g)),
         2 => Value::Bytes(Arbitrary::arbitrary(g)),
         3 => Value::Text(Arbitrary::arbitrary(g)),
         4 => Value::Special(Arbitrary::arbitrary(g)),
@@ -231,7 +247,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
     } else {
         match u8::arbitrary(g) % 5 {
             0 => Value::U64(u64::arbitrary(g)),
-            1 => Value::I64(i64::arbitrary(g)),
+            1 => Value::I64(arbitrary_negative_i64(g)),
             2 => Value::Bytes(Arbitrary::arbitrary(g)),
             3 => Value::Text(Arbitrary::arbitrary(g)),
             4 => {
@@ -316,13 +332,25 @@ mod test {
 
     #[test]
     fn i64() {
-        assert!(test_encode_decode(&Value::I64(0)).unwrap());
-        assert!(test_encode_decode(&Value::I64(23)).unwrap());
         assert!(test_encode_decode(&Value::I64(-99)).unwrap());
-        assert!(test_encode_decode(&Value::I64(99999)).unwrap());
         assert!(test_encode_decode(&Value::I64(-9999999)).unwrap());
         assert!(test_encode_decode(&Value::I64(-283749237289)).unwrap());
-        assert!(test_encode_decode(&Value::I64(93892929229)).unwrap());
+        assert!(test_encode_decode(&Value::I64(i64::MIN)).unwrap());
+        // non-negative I64 encodes as major type 0 (RFC 8949 §3.1),
+        // so it decodes as U64
+        for v in [0i64, 23, 99999, 93892929229] {
+            let mut se = Serializer::new_vec();
+            Value::I64(v).serialize(&mut se).unwrap();
+            let mut raw = Deserializer::from(se.finalize());
+            let decoded: Value = Deserialize::deserialize(&mut raw).unwrap();
+            assert_eq!(decoded, Value::U64(v as u64));
+        }
+        // nints below i64::MIN cannot be represented by Value::I64,
+        // so they fail to deserialize
+        let mut raw =
+            Deserializer::from(vec![0x3b, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
+        assert!(matches!(decoded, Err(Error::ExpectedI64)));
     }
 
     #[test]

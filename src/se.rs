@@ -392,16 +392,30 @@ impl Serializer {
     /// # assert_eq!(bytes, [0x2b].as_ref());
     /// ```
     pub fn write_negative_integer(&mut self, value: i64) -> Result<&mut Self> {
-        self.write_type_definite(Type::NegativeInteger, (-value - 1) as u64, None)
+        // RFC 8949 §3.1: major type 1 encodes only the range -2^64..=-1
+        if value >= 0 {
+            return Err(Error::InvalidNint(value as i128));
+        }
+        // computed in i128: `-value` overflows i64 for value == i64::MIN
+        self.write_type_definite(Type::NegativeInteger, (-(value as i128) - 1) as u64, None)
     }
 
     /// write a negative integer using a specific encoding
     ///
     /// see `write_negative_integer` and `Sz`
     ///
-    /// `value` must be within -1 and -u64::MAX -1 to fit into CBOR nint
+    /// `value` must be within the CBOR nint range -2^64..=-1 (RFC 8949 §3.1);
+    /// anything else returns `Error::InvalidNint`
     pub fn write_negative_integer_sz(&mut self, value: i128, sz: Sz) -> Result<&mut Self> {
-        let value_u64 = (-value - 1)
+        // RFC 8949 §3.1: major type 1 encodes only the range -2^64..=-1
+        if value >= 0 {
+            return Err(Error::InvalidNint(value));
+        }
+        // `-(value + 1)` rather than `-value - 1`:
+        // the latter overflows i128 for value == i128::MIN
+        // (and with `value < 0` guaranteed above, `value + 1` cannot overflow either).
+        // Values below -2^64 yield an argument that fails the u64 conversion.
+        let value_u64 = (-(value + 1))
             .try_into()
             .map_err(|_| Error::InvalidNint(value))?;
         self.write_type_definite(Type::NegativeInteger, value_u64, Some(sz))
@@ -788,6 +802,70 @@ mod test {
         assert_eq!(
             bytes,
             [0x1b, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27].as_ref()
+        );
+    }
+
+    #[test]
+    fn negative_integer_sz_bounds() {
+        // RFC 8949 §3.1: major type 1 covers exactly -2^64..=-1
+        let min_nint = -(u64::MAX as i128) - 1; // -2^64
+        let mut serializer = Serializer::new_vec();
+        serializer
+            .write_negative_integer_sz(min_nint, Sz::Eight)
+            .expect("write -2^64");
+        assert_eq!(
+            serializer.finalize(),
+            [0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff].as_ref()
+        );
+        // below -2^64 needs a bignum (tag 3), not major type 1
+        let mut serializer = Serializer::new_vec();
+        assert!(matches!(
+            serializer.write_negative_integer_sz(min_nint - 1, Sz::Eight),
+            Err(Error::InvalidNint(_))
+        ));
+        // i128::MIN doesn't panic (i.e.: no `-value - 1` bug)
+        assert!(matches!(
+            serializer.write_negative_integer_sz(i128::MIN, Sz::Eight),
+            Err(Error::InvalidNint(i128::MIN))
+        ));
+        // non-negative is rejected like the i64 variant; i128::MAX would
+        // overflow in `value + 1` if it reached the argument computation
+        assert!(matches!(
+            serializer.write_negative_integer_sz(0, Sz::One),
+            Err(Error::InvalidNint(0))
+        ));
+        assert!(matches!(
+            serializer.write_negative_integer_sz(i128::MAX, Sz::Eight),
+            Err(Error::InvalidNint(i128::MAX))
+        ));
+    }
+
+    #[test]
+    fn negative_integer_rejects_non_negative() {
+        // RFC 8949 §3.1: major type 1 encodes only -2^64..=-1
+        let mut serializer = Serializer::new_vec();
+        assert!(matches!(
+            serializer.write_negative_integer(0),
+            Err(Error::InvalidNint(0))
+        ));
+        assert!(matches!(
+            serializer.write_negative_integer(42),
+            Err(Error::InvalidNint(42))
+        ));
+    }
+
+    #[test]
+    fn negative_integer_i64_min() {
+        // -(i64::MIN) overflows i64, so the argument computation must not
+        // be done in i64; i64::MIN encodes as argument 2^63 - 1
+        let mut serializer = Serializer::new_vec();
+        serializer
+            .write_negative_integer(i64::MIN)
+            .expect("write i64::MIN");
+        let bytes = serializer.finalize();
+        assert_eq!(
+            bytes,
+            [0x3b, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff].as_ref()
         );
     }
 
