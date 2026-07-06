@@ -400,7 +400,11 @@ impl Deserializer {
 
     /// Read a `NegativeInteger` from the `Deserializer`
     ///
-    /// The function fails if the type of the given Deserializer is not `Type::NegativeInteger`.
+    /// The function fails
+    /// - with `Error::Expected` if the type of the given Deserializer is not `Type::NegativeInteger`.
+    /// - with `Error::ExpectedI64` for negative integers below `i64::MIN` (RFC 8949 §3.1 allows down to -2^64)
+    ///   leaving the header unconsumed so the value can be re-read with [`Self::negative_integer_sz`]
+    ///   which covers the full range via `i128`.
     ///
     /// # Example
     ///
@@ -414,12 +418,34 @@ impl Deserializer {
     ///
     /// assert_eq!(integer, -42);
     /// ```
+    ///
+    /// ```
+    /// use cbor_event::de::{*};
+    ///
+    /// // -2^64, the RFC 8949 §3.1 minimum: too small for i64
+    /// let vec = vec![0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    /// let mut raw = Deserializer::from(vec);
+    ///
+    /// assert!(raw.negative_integer().is_err());
+    /// // the header is still intact, so the i128 variant can read it
+    /// let (integer, _sz) = raw.negative_integer_sz().unwrap();
+    /// assert_eq!(integer, -18446744073709551616i128);
+    /// ```
     pub fn negative_integer(&mut self) -> Result<i64> {
         self.cbor_expect_type(Type::NegativeInteger)?;
         let (len, len_sz) = self.cbor_len()?;
         match len {
             Len::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::NegativeInteger)),
             Len::Len(v) => {
+                // RFC 8949 §3.1: a major type 1 item encodes "-1 minus the argument",
+                // so arguments above i64::MAX encode values below i64::MIN
+                // which cannot fit the i64 return type (therefore, errors on i64::MAX)
+                // Note: the header is not consumed, so callers can retry with
+                // negative_integer_sz, which covers the full nint range
+                // via i128.
+                if v > i64::MAX as u64 {
+                    return Err(Error::ExpectedI64);
+                }
                 self.advance(1 + len_sz)?;
                 Ok(-(v as i64) - 1)
             }
@@ -881,6 +907,27 @@ mod test {
     }
 
     #[test]
+    fn negative_integer_below_i64_min_errors_instead_of_panicking() {
+        // nint with argument 0x8000_0000_0000_0000 encodes -1 - argument
+        // (RFC 8949 §3.1), one below i64::MIN: it cannot fit an i64.
+        // avoid a `-(v as i64) - 1` kind of mistake
+        let input = vec![0x3b, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let mut raw = Deserializer::from(input);
+        assert!(matches!(raw.negative_integer(), Err(Error::ExpectedI64)));
+        // the header was not consumed, so the i128-returning variant can
+        // still read the full nint range from the same deserializer
+        assert_eq!(
+            raw.negative_integer_sz().unwrap().0,
+            -9223372036854775809i128
+        );
+
+        // boundary: argument i64::MAX encodes exactly i64::MIN, which fits
+        let mut raw =
+            Deserializer::from(vec![0x3b, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(raw.negative_integer().unwrap(), i64::MIN);
+    }
+
+    #[test]
     fn bytes() {
         let vec = vec![
             0x52, 0x73, 0x6F, 0x6D, 0x65, 0x20, 0x72, 0x61, 0x6E, 0x64, 0x6F, 0x6D, 0x20, 0x73,
@@ -1171,6 +1218,15 @@ mod test {
         assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::Two));
         assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::Four));
         assert_eq!(raw.negative_integer_sz().unwrap(), (-9, Sz::Eight));
+
+        // RFC 8949 Appendix A: 0x3bffffffffffffffff is -18446744073709551616
+        // (-2^64), the extreme of the nint range
+        let mut raw =
+            Deserializer::from(vec![0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(
+            raw.negative_integer_sz().unwrap(),
+            (-18446744073709551616i128, Sz::Eight)
+        );
     }
 
     #[test]
