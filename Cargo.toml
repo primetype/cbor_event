@@ -13,4 +13,5 @@ The CBOR Event library. There are no dependencies, all platforms are supported a
 """
 
 [dev-dependencies]
+half = "2.7.1"
 quickcheck = "0.7"

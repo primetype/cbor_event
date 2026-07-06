@@ -10,6 +10,37 @@ use len::{Len, LenSz, StringLenSz, Sz};
 use result::Result;
 use types::{Special, Type};
 
+/// Decode an IEEE 754 binary16 (half-precision) bit pattern to f64,
+/// per RFC 8949 §3.3 / Appendix D.
+/// Lossless: every f16 value is exactly representable in f64.
+///
+/// Vendored because rust's native f16 is not yet stable (rust-lang/rust#116909)
+/// and this crate has no dependencies.
+/// Once stable, replace this code with https://github.com/primetype/cbor_event/pull/18
+fn f16_bits_to_f64(bits: u16) -> f64 {
+    let exp = (bits >> 10) & 0x1f;
+    let mant = (bits & 0x3ff) as f64;
+    let mag = match exp {
+        // subnormal or ±0: mant * 2^-24
+        0 => mant * (1.0 / 16_777_216.0),
+        0x1f => {
+            if mant == 0.0 {
+                f64::INFINITY
+            } else {
+                f64::NAN
+            }
+        }
+        // normal: (1024 + mant) * 2^(exp - 25), built via from_bits
+        // since f64::powi/exp2 are std-only and this crate is no_std
+        _ => (1024.0 + mant) * f64::from_bits(u64::from(exp + 1023 - 25) << 52),
+    };
+    if bits & 0x8000 != 0 {
+        -mag
+    } else {
+        mag
+    }
+}
+
 pub trait Deserialize: Sized {
     /// method to implement to deserialise an object from the given
     /// `Deserializer`.
@@ -772,9 +803,9 @@ impl Deserializer {
                 Ok(Special::Unassigned(b as u8))
             }
             0x19 => {
-                let f = self.u16(1)?;
+                let f = self.u16(1)? as u16;
                 self.advance(3)?;
-                Ok(Special::Float(f as f64))
+                Ok(Special::Float(f16_bits_to_f64(f)))
             }
             0x1a => {
                 let f = self.u32(1)? as u32;
@@ -962,6 +993,47 @@ mod test {
         let float = raw.float().unwrap();
 
         assert_eq!(float, 1.1);
+    }
+
+    #[test]
+    fn float16() {
+        // (bytes, expected) pairs from RFC 8949 Appendix A
+        let cases: &[(&[u8], f64)] = &[
+            (&[0xf9, 0x3c, 0x00], 1.0),
+            (&[0xf9, 0x42, 0x00], 3.0),
+            (&[0xf9, 0x3e, 0x00], 1.5),
+            (&[0xf9, 0x00, 0x00], 0.0),
+            (&[0xf9, 0x80, 0x00], -0.0),
+            (&[0xf9, 0xc4, 0x00], -4.0),
+            (&[0xf9, 0x00, 0x01], 5.960464477539063e-8), // subnormal
+            (&[0xf9, 0x04, 0x00], 6.103515625e-5),
+            (&[0xf9, 0x7b, 0xff], 65504.0),
+            (&[0xf9, 0x7c, 0x00], f64::INFINITY),
+            (&[0xf9, 0xfc, 0x00], f64::NEG_INFINITY),
+        ];
+        for (bytes, expected) in cases {
+            let mut raw = Deserializer::from(bytes.to_vec());
+            assert_eq!(raw.float().unwrap(), *expected, "bytes: {:x?}", bytes);
+        }
+        let mut raw = Deserializer::from(vec![0xf9, 0x7e, 0x00]);
+        assert!(raw.float().unwrap().is_nan());
+    }
+
+    #[test]
+    fn float16_exhaustive_against_half_crate() {
+        for bits in 0..=u16::MAX {
+            let ours = super::f16_bits_to_f64(bits);
+            let reference = half::f16::from_bits(bits).to_f64();
+            // bit-exact so ±0.0 are distinguished; NaN payloads are exempt
+            // (we canonicalize to f64::NAN, half preserves the payload)
+            assert!(
+                ours.to_bits() == reference.to_bits() || (ours.is_nan() && reference.is_nan()),
+                "bits {:#06x}: ours {} != half {}",
+                bits,
+                ours,
+                reference
+            );
+        }
     }
 
     #[test]
