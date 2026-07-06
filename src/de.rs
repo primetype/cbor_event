@@ -375,10 +375,29 @@ impl Deserializer {
         }
     }
 
+    /// check that the underlying buffer holds at least `len` more bytes, so a
+    /// length header claimed by untrusted input can never index past the
+    /// buffer (which would panic). Checked in `u64` so the length cannot be
+    /// truncated by an `as usize` cast on 32-bit targets before the check.
+    #[inline]
+    fn ensure(&self, len: u64) -> Result<()> {
+        if (self.data.len() as u64) < len {
+            // saturate rather than truncate the reported expected size on
+            // 32-bit targets where the claimed length exceeds usize::MAX
+            Err(Error::NotEnough(
+                self.data.len(),
+                core::cmp::min(len, usize::MAX as u64) as usize,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     /// consume the given `len` from the underlying buffer. Skipped bytes are
     /// then lost, they cannot be retrieved for future references.
     #[inline]
     pub fn advance(&mut self, len: usize) -> Result<()> {
+        self.ensure(len as u64)?;
         self.data.drain(..len);
 
         Ok(())
@@ -510,6 +529,7 @@ impl Deserializer {
                         LenSz::Indefinite => return Err(Error::InvalidIndefiniteString),
                         LenSz::Len(len, sz) => {
                             self.advance(1 + sz.bytes_following())?;
+                            self.ensure(len)?;
                             bytes.extend_from_slice(&self.data[0..len as usize]);
                             self.advance(len as usize)?;
                             chunk_lens.push((len, sz));
@@ -519,6 +539,7 @@ impl Deserializer {
                 Ok((bytes, StringLenSz::Indefinite(chunk_lens)))
             }
             LenSz::Len(len, sz) => {
+                self.ensure(len)?;
                 let bytes = &self.data[0..len as usize];
                 let bytes_vec = Vec::from(bytes);
                 self.advance(len as usize)?;
@@ -567,6 +588,7 @@ impl Deserializer {
                             // rfc7049 forbids splitting UTF-8 characters across chunks so we must
                             // read each chunk separately as a definite encoded UTF-8 string
                             self.advance(1 + sz.bytes_following())?;
+                            self.ensure(len)?;
                             let bytes = &self.data[0..len as usize];
                             let chunk_text = String::from_utf8_lossy(bytes).into_owned();
                             self.advance(len as usize)?;
@@ -578,6 +600,7 @@ impl Deserializer {
                 Ok((text, StringLenSz::Indefinite(chunk_lens)))
             }
             LenSz::Len(len, sz) => {
+                self.ensure(len)?;
                 let bytes = &self.data[0..len as usize];
                 let text = String::from_utf8_lossy(bytes).into_owned();
                 self.advance(len as usize)?;
@@ -944,6 +967,46 @@ mod test {
         let found = raw.bytes().unwrap();
         assert_eq!(found, expected);
     }
+    #[test]
+    fn truncated_length_headers_error_instead_of_panicking() {
+        // each input claims a length far beyond the actual buffer; decoding
+        // must return Err(NotEnough), not panic or allocate the claimed size
+        let cases: &[&[u8]] = &[
+            // text, 8-byte len header claiming ~2GB, 2 payload bytes
+            &[
+                0x7b, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0xe8, 0x00, 0x2e, 0xf6,
+            ],
+            // bytes, 8-byte len header claiming u64::MAX, no payload
+            &[0x5b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+            // text, 1-byte len header claiming 0x29, no payload
+            &[0x78, 0x29],
+            // indefinite bytes whose chunk claims 0x19 bytes, 1 payload byte
+            &[0x5f, 0x58, 0x19, 0x00],
+            // indefinite text whose chunk claims 0x19 bytes, 1 payload byte
+            &[0x7f, 0x78, 0x19, 0x00],
+        ];
+        for input in cases {
+            let mut raw = Deserializer::from(input.to_vec());
+            let result = match input[0] >> 5 {
+                2 => raw.bytes().map(|_| ()),
+                3 => raw.text().map(|_| ()),
+                _ => unreachable!(),
+            };
+            assert!(
+                matches!(result, Err(Error::NotEnough(_, _))),
+                "input {:x?}: expected NotEnough, got {:?}",
+                input,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn advance_past_end_errors() {
+        let mut raw = Deserializer::from(vec![0x00]);
+        assert!(matches!(raw.advance(2), Err(Error::NotEnough(1, 2))));
+    }
+
     #[test]
     fn bytes_empty() {
         let vec = vec![0x40];
