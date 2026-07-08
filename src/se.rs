@@ -104,7 +104,7 @@ where
 ///
 /// i.e. the size must be known ahead of time
 ///
-pub fn serialize_fixed_map<'a, C, K, V, W>(
+pub fn serialize_fixed_map<'a, C, K, V>(
     data: C,
     serializer: &mut Serializer,
 ) -> Result<&mut Serializer>
@@ -142,7 +142,7 @@ where
 
 /// helper function to serialise a map of indefinite number of elements.
 ///
-pub fn serialize_indefinite_map<'a, C, K, V, W>(
+pub fn serialize_indefinite_map<'a, C, K, V>(
     data: C,
     serializer: &mut Serializer,
 ) -> Result<&mut Serializer>
@@ -161,7 +161,7 @@ where
 
 /// helper function to serialise a collection of T as a indefinite number of element
 ///
-pub fn serialize_indefinite_array<'a, C, T, W>(
+pub fn serialize_indefinite_array<'a, C, T>(
     data: C,
     serializer: &mut Serializer,
 ) -> Result<&mut Serializer>
