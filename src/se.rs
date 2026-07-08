@@ -514,8 +514,7 @@ impl Serializer {
                 for (len, sz) in lens {
                     let end = start + len as usize;
                     let chunk = &bytes[start..end];
-                    let chunk_str = String::from_utf8(chunk.to_vec())
-                        .map_err(|_| Error::InvalidLenPassed(sz))?;
+                    let chunk_str = String::from_utf8(chunk.to_vec())?;
                     self.write_text_sz(chunk_str, StringLenSz::Len(sz))?;
                     start = end;
                 }
@@ -1145,6 +1144,17 @@ mod test {
             .unwrap();
         let bytes = serializer.finalize();
         assert_eq!(bytes, expected_bytes);
+    }
+
+    #[test]
+    fn text_sz_chunk_split_inside_utf8_char() {
+        // 'é' is 2 bytes; chunk lens 1/1 would split it mid-character
+        let mut serializer = Serializer::new_vec();
+        let result = serializer.write_text_sz(
+            "é",
+            StringLenSz::Indefinite(vec![(1, Sz::Inline), (1, Sz::Inline)]),
+        );
+        assert!(matches!(result, Err(Error::InvalidTextError(_))));
     }
 
     #[test]

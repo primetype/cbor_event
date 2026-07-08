@@ -348,6 +348,20 @@ mod test {
     }
 
     #[test]
+    fn text_invalid_utf8_rejected() {
+        // regression guard: Value/ObjectKey text decoding must stay strict
+        // even if text_sz() internals change
+        let mut raw = Deserializer::from(vec![0x62, 0xff, 0xfe]);
+        let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
+        assert!(matches!(decoded, Err(Error::InvalidTextError(_))));
+
+        // map with an invalid-UTF-8 text key (exercises ObjectKey)
+        let mut raw = Deserializer::from(vec![0xa1, 0x62, 0xff, 0xfe, 0x01]);
+        let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
+        assert!(matches!(decoded, Err(Error::InvalidTextError(_))));
+    }
+
+    #[test]
     fn bytes() {
         assert!(test_encode_decode(&Value::Bytes(vec![])).unwrap());
         assert!(test_encode_decode(&Value::Bytes(vec![0; 23])).unwrap());
