@@ -4,7 +4,6 @@
 //! [`Deserialize`]: ./de/trait.Deserialize.html
 //! [`Serializer`]: ./se/struct.Serializer.html
 //! [`Serialize`]: ./se/trait.Serialize.html
-//! [`std::io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
 //! [`Error`]: ./enum.Error.html
 //! [`Type`]: ./enum.Type.html
 //!
@@ -43,9 +42,8 @@
 //! ## Serialisation: [`Serializer`]
 //!
 //! To serialise your objects into CBOR we provide a simple object
-//! [`Serializer`]. It is configurable with any [`std::io::Write`]
-//! objects. [`Serializer`] is meant to be simple to use and to have
-//! limited overhead.
+//! [`Serializer`]. It is meant to be simple to use and to have limited
+//! overhead.
 //!
 //! ```
 //! use cbor_event::se::{Serializer};

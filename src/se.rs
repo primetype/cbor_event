@@ -207,8 +207,7 @@ where
 // every _reserve_ calls.
 const DEFAULT_CAPACITY: usize = 512;
 
-/// simple CBOR serializer into any
-/// [`std::io::Write`](https://doc.rust-lang.org/std/io/trait.Write.html).
+/// simple CBOR serializer into an owned byte buffer.
 ///
 #[derive(Debug)]
 pub struct Serializer {
