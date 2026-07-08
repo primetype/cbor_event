@@ -200,6 +200,15 @@ impl<T: Deserialize> Deserialize for Option<T> {
 /// - `Error::IndefiniteLenUnsupported(t)`: the Indefinite length is not
 ///   supported for the given [`Type`] `t`;
 ///
+/// # Error recovery
+///
+/// A failed operation does **not** rewind the read position: it is left
+/// wherever parsing stopped (e.g. mid-item after a `NotEnough`), which is
+/// useful to locate the failure. To make any operation atomic, snapshot
+/// [`Self::position`] before the call and restore it with
+/// [`Self::set_position`] on error. This is the intended pattern for
+/// speculative parsing and for retrying after feeding more bytes.
+///
 /// # Panic
 ///
 /// There is no explicit `panic!` in this code, except a few `unreachable!`.
@@ -231,6 +240,11 @@ impl Deserializer {
     /// consume the `Deserializer` and returns the remaining
     /// (not-yet-consumed) bytes. This copies the tail out of the underlying
     /// buffer (`O(remaining)`).
+    ///
+    /// Warning: after a failed parse the read position is mid-item, so the
+    /// returned tail starts *inside* the failed item. If you intend to retry
+    /// (e.g. after a `NotEnough`, by appending more bytes), rewind with
+    /// [`Self::set_position`] first or the front of the item is lost.
     pub fn inner(mut self) -> Vec<u8> {
         self.data.split_off(self.offset)
     }

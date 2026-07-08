@@ -207,8 +207,26 @@ where
 // every _reserve_ calls.
 const DEFAULT_CAPACITY: usize = 512;
 
+/// whether `len` is representable with the given length encoding
+fn sz_fits(sz: Sz, len: u64) -> bool {
+    match sz {
+        Sz::Inline => len <= super::MAX_INLINE_ENCODING,
+        Sz::One => len < 0x1_00,
+        Sz::Two => len < 0x1_00_00,
+        Sz::Four => len < 0x1_00_00_00_00,
+        Sz::Eight => true,
+    }
+}
+
 /// simple CBOR serializer into an owned byte buffer.
 ///
+/// # Error recovery
+///
+/// A failed write leaves the output buffer unchanged: arguments are validated
+/// before any bytes are emitted, so it is safe to keep using the serializer
+/// after handling an error. (Contrast with [`crate::de::Deserializer`], where
+/// a failed parse leaves the read position mid-item and the caller rewinds
+/// via `set_position`.)
 #[derive(Debug)]
 pub struct Serializer {
     data: Vec<u8>,
@@ -321,14 +339,7 @@ impl Serializer {
         let extra_sz = match sz {
             None => Sz::canonical(len),
             Some(sz) => {
-                let fits = match sz {
-                    Sz::Inline => len <= super::MAX_INLINE_ENCODING,
-                    Sz::One => len < 0x1_00,
-                    Sz::Two => len < 0x1_00_00,
-                    Sz::Four => len < 0x1_00_00_00_00,
-                    Sz::Eight => true,
-                };
-                if !fits {
+                if !sz_fits(sz, len) {
                     return Err(Error::InvalidLenPassed(sz));
                 }
                 sz
@@ -459,6 +470,13 @@ impl Serializer {
                 if sz_sum != bytes.len() as u64 {
                     return Err(Error::InvalidIndefiniteString);
                 }
+                // validate all chunks before writing anything so an error
+                // can't leave a partial (unterminated) string in the buffer
+                for (len, sz) in lens.iter() {
+                    if !sz_fits(*sz, *len) {
+                        return Err(Error::InvalidLenPassed(*sz));
+                    }
+                }
                 self.write_u8(Type::Bytes.to_byte(0x1f))?;
                 let mut start = 0;
                 for (len, sz) in lens {
@@ -508,13 +526,25 @@ impl Serializer {
                 if sz_sum != bytes.len() as u64 {
                     return Err(Error::InvalidIndefiniteString);
                 }
+                // validate all chunks before writing anything so an error
+                // can't leave a partial (unterminated) string in the buffer.
+                let mut start = 0;
+                for (len, sz) in lens.iter() {
+                    let end = start + *len as usize;
+                    // used for validation only (dropped right after) and doesn't modify bytes.
+                    // String::from_utf8 (not str::from_utf8) to preserve FromUtf8Error
+                    String::from_utf8(bytes[start..end].to_vec())?;
+                    if !sz_fits(*sz, *len) {
+                        return Err(Error::InvalidLenPassed(*sz));
+                    }
+                    start = end;
+                }
                 self.write_u8(Type::Text.to_byte(0x1f))?;
                 let mut start = 0;
                 for (len, sz) in lens {
                     let end = start + len as usize;
-                    let chunk = &bytes[start..end];
-                    let chunk_str = String::from_utf8(chunk.to_vec())?;
-                    self.write_text_sz(chunk_str, StringLenSz::Len(sz))?;
+                    self.write_type_definite(Type::Text, len, Some(sz))?;
+                    self.data.extend_from_slice(&bytes[start..end]);
                     start = end;
                 }
                 self.write_u8(Type::Special.to_byte(0x1f))?;
@@ -1154,6 +1184,22 @@ mod test {
             StringLenSz::Indefinite(vec![(1, Sz::Inline), (1, Sz::Inline)]),
         );
         assert!(matches!(result, Err(Error::InvalidTextError(_))));
+        // the failed write must not leave partial output in the buffer
+        serializer.write_unsigned_integer(1).expect("write uint");
+        assert_eq!(serializer.finalize(), vec![0x01]);
+    }
+
+    #[test]
+    fn bytes_sz_error_leaves_no_partial_output() {
+        let mut serializer = Serializer::new_vec();
+        // 300 doesn't fit Sz::Inline (max 23), but only fails inside the chunk loop
+        let result = serializer.write_bytes_sz(
+            vec![0u8; 300],
+            StringLenSz::Indefinite(vec![(300, Sz::Inline)]),
+        );
+        assert!(matches!(result, Err(Error::InvalidLenPassed(Sz::Inline))));
+        serializer.write_unsigned_integer(1).expect("write uint");
+        assert_eq!(serializer.finalize(), vec![0x01]);
     }
 
     #[test]
