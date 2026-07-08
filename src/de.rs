@@ -889,6 +889,11 @@ impl Deserializer {
             }
             0x18 => {
                 let b = self.u8(1)?;
+                // two-byte form is only well-formed for values >= 32
+                // (RFC 8949 Appendix C: `if (ib == 0xf8 && val < 0x20) fail`)
+                if b < 0x20 {
+                    return Err(Error::InvalidSimpleValue(b as u8));
+                }
                 self.advance(2)?;
                 Ok(Special::Unassigned(b as u8))
             }
@@ -907,10 +912,8 @@ impl Deserializer {
                 self.advance(9)?;
                 Ok(Special::Float(f64::from_bits(f)))
             }
-            0x1c..=0x1e => {
-                self.advance(1)?;
-                Ok(Special::Unassigned(b))
-            }
+            // 0xfc..=0xfe are reserved, not well-formed (RFC 8949 §3.3)
+            0x1c..=0x1e => Err(Error::InvalidSimpleValue(b)),
             0x1f => {
                 self.advance(1)?;
                 Ok(Special::Break)
@@ -1381,6 +1384,23 @@ mod test {
         let i = raw.unsigned_integer().unwrap();
         assert!(i == 2);
         assert_eq!(Special::Break, raw.special().unwrap());
+    }
+
+    #[test]
+    fn special_rejects_non_well_formed() {
+        // one-byte reserved codepoints (RFC 8949 §3.3)
+        for b in [0xfcu8, 0xfd, 0xfe] {
+            assert!(Deserializer::from(vec![b]).special().is_err());
+        }
+        // two-byte form with value < 32 (RFC 8949 Appendix C)
+        for v in [0x00u8, 0x13, 0x14, 0x1f] {
+            assert!(Deserializer::from(vec![0xf8, v]).special().is_err());
+        }
+        // two-byte form with value >= 32 is fine
+        assert_eq!(
+            Special::Unassigned(32),
+            Deserializer::from(vec![0xf8, 0x20]).special().unwrap()
+        );
     }
 
     #[test]
