@@ -198,7 +198,6 @@ impl<T: Deserialize> Deserialize for Option<T> {
 ///   or unsupported format;
 /// - `Error::IndefiniteLenUnsupported(t)`: the Indefinite length is not
 ///   supported for the given [`Type`] `t`;
-/// - `Error::IoError(io_error)`: error due relating to buffer management;
 ///
 /// # Panic
 ///
