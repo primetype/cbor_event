@@ -36,6 +36,10 @@ pub enum Error {
     InvalidIndefiniteString,
     InvalidLenPassed(len::Sz),
     InvalidNint(i128),
+    /// a Break stop code (`0xff`) where a data item was expected: only
+    /// well-formed directly inside an indefinite-length container
+    /// (RFC 8949 Appendix C)
+    UnexpectedBreak,
 
     CustomError(String),
 }
@@ -92,6 +96,10 @@ impl fmt::Display for Error {
             TrailingData => write!(f, "Unexpected trailing data in CBOR"),
             InvalidIndefiniteString => write!(f, "Invalid cbor: Invalid indefinite string format"),
             InvalidLenPassed(sz) => write!(f, "Invalid length for serialization: {:?}", sz),
+            UnexpectedBreak => write!(
+                f,
+                "Invalid cbor: break stop code outside an indefinite-length container"
+            ),
             CustomError(err) => write!(f, "Invalid cbor: {}", err),
             InvalidNint(x) => write!(f, "Passed nint {} out of range", x),
         }

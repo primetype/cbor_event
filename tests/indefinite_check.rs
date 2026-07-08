@@ -25,7 +25,7 @@
 
 extern crate cbor_event;
 use cbor_event::de::Deserializer;
-use cbor_event::{ObjectKey, Special, Value};
+use cbor_event::{ObjectKey, SpecialValue, Value};
 use std::collections::BTreeMap;
 
 fn de_value(bytes: &[u8]) -> cbor_event::Result<Value> {
@@ -56,7 +56,7 @@ fn value_empty_indefinite_map() {
 fn value_indefinite_array_with_bool() {
     assert_eq!(
         de_value(&[0x9f, 0xf4, 0xff]).unwrap(),
-        Value::IArray(vec![Value::Special(Special::Bool(false))])
+        Value::IArray(vec![Value::Special(SpecialValue::Bool(false))])
     );
 }
 
@@ -64,7 +64,7 @@ fn value_indefinite_array_with_bool() {
 #[test]
 fn value_indefinite_map_rfc_vector() {
     let mut expected = BTreeMap::new();
-    expected.insert(text_key("Fun"), Value::Special(Special::Bool(true)));
+    expected.insert(text_key("Fun"), Value::Special(SpecialValue::Bool(true)));
     expected.insert(text_key("Amt"), Value::I64(-2));
     assert_eq!(
         de_value(&[0xbf, 0x63, 0x46, 0x75, 0x6e, 0xf5, 0x63, 0x41, 0x6d, 0x74, 0x21, 0xff])
@@ -140,6 +140,36 @@ fn vec_indefinite_with_bools() {
         .deserialize::<Vec<bool>>()
         .unwrap();
     assert_eq!(v, vec![false, true]);
+}
+
+// RFC 8949 Appendix C: Break (0xff) is only well-formed directly inside an
+// indefinite-length container, terminating it. As a data item it must be
+// rejected. These decoded to Ok(..Special(Break)..) before Value stored the
+// Break-less SpecialValue type.
+
+// ff = <break> at the top level
+#[test]
+fn value_top_level_break_errors() {
+    assert!(de_value(&[0xff]).is_err());
+}
+
+// 81ff = [<break>], definite array element
+#[test]
+fn value_break_in_definite_array_errors() {
+    assert!(de_value(&[0x81, 0xff]).is_err());
+}
+
+// bf01ffff = {_ 1: <break>}, map-value position (first ff is not scanned
+// for by the terminator loop, which only looks at key position)
+#[test]
+fn value_break_in_map_value_position_errors() {
+    assert!(de_value(&[0xbf, 0x01, 0xff, 0xff]).is_err());
+}
+
+// c1ff = 1(<break>), tag content
+#[test]
+fn value_break_as_tag_content_errors() {
+    assert!(de_value(&[0xc1, 0xff]).is_err());
 }
 
 // map position of the typed decoder (same loop, map_with entry point):

@@ -20,12 +20,13 @@ use core::iter::repeat_with;
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
 
+use core::convert::TryFrom;
 use de::*;
 use error::Error;
 use len::Len;
 use result::Result;
 use se::*;
-use types::{Special, Type};
+use types::{Special, SpecialValue, Type};
 
 /// CBOR Object key, represents the possible supported values for
 /// a CBOR key in a CBOR Map.
@@ -85,7 +86,9 @@ pub enum Value {
     Object(BTreeMap<ObjectKey, Value>),
     IObject(BTreeMap<ObjectKey, Value>),
     Tag(u64, Box<Value>),
-    Special(Special),
+    /// holds [`SpecialValue`], not [`Special`]:
+    /// Break is a wire-level terminator, not a data item, so a `Value` cannot contain one
+    Special(SpecialValue),
 }
 
 impl Serialize for Value {
@@ -127,7 +130,7 @@ impl Serialize for Value {
                 serializer.write_special(Special::Break)
             }
             Value::Tag(ref tag, ref v) => serializer.write_tag(*tag)?.serialize(v.as_ref()),
-            Value::Special(ref v) => serializer.write_special(*v),
+            Value::Special(ref v) => serializer.write_special(Special::from(*v)),
         }
     }
 }
@@ -182,7 +185,10 @@ impl Deserialize for Value {
                 let tag = raw.tag()?;
                 Ok(Value::Tag(tag, Box::new(Deserialize::deserialize(raw)?)))
             }
-            Type::Special => Ok(Value::Special(raw.special()?)),
+            // rejects Break: not well-formed as a data item (RFC 8949 App. C).
+            // The indefinite-length loops above consume the terminating Break
+            // before recursing, so a Break reaching this arm is always dangling
+            Type::Special => Ok(Value::Special(SpecialValue::try_from(raw.special()?)?)),
         }
     }
 }
@@ -212,16 +218,6 @@ fn arbitrary_negative_i64<G: Gen>(g: &mut G) -> i64 {
     }
 }
 
-// Break is a wire-level terminator, not a data value: inside an indefinite
-// container it changes the structure and cannot round-trip
-#[cfg(test)]
-fn arbitrary_special_non_break<G: Gen>(g: &mut G) -> Special {
-    match Special::arbitrary(g) {
-        Special::Break => Special::Null,
-        s => s,
-    }
-}
-
 #[cfg(test)]
 fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
     match u8::arbitrary(g) % 5 {
@@ -229,7 +225,7 @@ fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
         1 => Value::I64(arbitrary_negative_i64(g)),
         2 => Value::Bytes(Arbitrary::arbitrary(g)),
         3 => Value::Text(Arbitrary::arbitrary(g)),
-        4 => Value::Special(arbitrary_special_non_break(g)),
+        4 => Value::Special(Arbitrary::arbitrary(g)),
         _ => unreachable!(),
     }
 }
@@ -290,7 +286,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
                 u64::arbitrary(g),
                 arbitrary_value_indefinite(counter - 1, g).into(),
             ),
-            9 => Value::Special(arbitrary_special_non_break(g)),
+            9 => Value::Special(Arbitrary::arbitrary(g)),
             _ => unreachable!(),
         }
     }
