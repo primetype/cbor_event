@@ -14,10 +14,11 @@
 //! Here is the list of supported CBOR primary [`Type`]:
 //!
 //! - Unsigned and Negative Integers;
-//! - Bytes and UTF8 String (**finite length only**);
+//! - Bytes and UTF8 String (of finite and indefinite size);
 //! - Array and Map (of finite and indefinite size);
 //! - Tag;
-//! - Specials (`bool`, `null`... **except floating points**).
+//! - Specials (`bool`, `null`, floating points, ...). Floats decode from any
+//!   width (f16/f32/f64) but always serialize as f64.
 //!
 //! ## Raw deserialisation: [`Deserializer`]
 //!
