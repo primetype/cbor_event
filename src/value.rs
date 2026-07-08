@@ -403,5 +403,36 @@ mod test {
         fn property_encode_decode(value: Value) -> bool {
             test_encode_decode(&value).unwrap()
         }
+
+        // speculative parsing: a wrong-typed parse fails without consuming,
+        // and rewinding with set_position replays to an identical parse
+        fn property_cursor_rewind(value: Value) -> bool {
+            let mut se = Serializer::new_vec();
+            value.serialize(&mut se).unwrap();
+            let bytes = se.finalize();
+            let original_len = bytes.len();
+            let mut raw = Deserializer::from(bytes);
+
+            let start = raw.position();
+            // pick the wrong parser from the actual type so it is
+            // guaranteed to fail whatever the arbitrary value is
+            let wrong_parse_failed = if raw.cbor_type().unwrap() == Type::UnsignedInteger {
+                raw.text().is_err()
+            } else {
+                raw.unsigned_integer().is_err()
+            };
+            let nothing_consumed = raw.position() == start;
+
+            let first: Value = raw.deserialize().unwrap();
+            let end = raw.position();
+            raw.set_position(start).unwrap();
+            let second: Value = raw.deserialize().unwrap();
+
+            wrong_parse_failed
+                && nothing_consumed
+                && first == second
+                && raw.position() == end
+                && raw.as_slice().len() + raw.position() == original_len
+        }
     }
 }

@@ -189,8 +189,9 @@ impl<T: Deserialize> Deserialize for Option<T> {
 /// When deserialising from `Deserializer` it is possible to see the following
 /// [`Error`]s:
 ///
-/// - `Error::NotEnough(current_size, needed_size)`: meaning we are expecting
-///   a more bytes to parse the CBOR properly;
+/// - `Error::NotEnough(remaining_size, needed_size)`: meaning we are expecting
+///   more bytes to parse the CBOR properly (`remaining_size` is the number of
+///   not-yet-consumed bytes, not the total buffer size);
 /// - `Error::Expected(expected_type, current_type)`: the current cbor primary
 ///   [`Type`] is different from the expected [`Type`];
 /// - `Error::UnknownLenType(byte)`: the CBOR is serialized in an unknown
@@ -205,16 +206,11 @@ impl<T: Deserialize> Deserialize for Option<T> {
 ///
 pub struct Deserializer {
     data: Vec<u8>,
+    offset: usize,
 }
 impl From<Vec<u8>> for Deserializer {
     fn from(r: Vec<u8>) -> Self {
-        Deserializer { data: r }
-    }
-}
-
-impl AsRef<Vec<u8>> for Deserializer {
-    fn as_ref(&self) -> &Vec<u8> {
-        &self.data
+        Deserializer { data: r, offset: 0 }
     }
 }
 
@@ -222,7 +218,7 @@ impl Display for Deserializer {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.write_str(
             &self
-                .data
+                .as_slice()
                 .iter()
                 .map(|b| format!("{:02x}", b))
                 .collect::<Vec<String>>()
@@ -232,14 +228,50 @@ impl Display for Deserializer {
 }
 
 impl Deserializer {
-    pub fn inner(self) -> Vec<u8> {
-        self.data
+    /// consume the `Deserializer` and returns the remaining
+    /// (not-yet-consumed) bytes. This copies the tail out of the underlying
+    /// buffer (`O(remaining)`).
+    pub fn inner(mut self) -> Vec<u8> {
+        self.data.split_off(self.offset)
+    }
+
+    /// returns the current read position, i.e. the number of bytes consumed
+    /// from the underlying buffer so far. Can be fed back to
+    /// [`Self::set_position`] to rewind (e.g. for speculative parsing).
+    #[inline]
+    pub fn position(&self) -> usize {
+        self.offset
+    }
+
+    /// set the read position to `pos` (an absolute position previously
+    /// obtained from [`Self::position`]). `pos` equal to the buffer length is
+    /// valid and denotes the fully-consumed state. Returns
+    /// `Error::NotEnough(buffer_len, pos)` if `pos` is out of range.
+    pub fn set_position(&mut self, pos: usize) -> Result<()> {
+        if pos > self.data.len() {
+            Err(Error::NotEnough(self.data.len(), pos))
+        } else {
+            self.offset = pos;
+            Ok(())
+        }
+    }
+
+    /// returns the remaining (not-yet-consumed) bytes without consuming them.
+    #[inline]
+    pub fn as_slice(&self) -> &[u8] {
+        &self.data[self.offset..]
     }
 
     #[inline]
+    fn remaining(&self) -> usize {
+        self.data.len() - self.offset
+    }
+
+    /// `index` is relative to the current read position.
+    #[inline]
     fn get(&mut self, index: usize) -> Result<u8> {
-        match self.data.get(index) {
-            None => Err(Error::NotEnough(self.data.len(), index)),
+        match self.data.get(self.offset + index) {
+            None => Err(Error::NotEnough(self.remaining(), index)),
             Some(b) => Ok(*b),
         }
     }
@@ -381,11 +413,11 @@ impl Deserializer {
     /// truncated by an `as usize` cast on 32-bit targets before the check.
     #[inline]
     fn ensure(&self, len: u64) -> Result<()> {
-        if (self.data.len() as u64) < len {
+        if (self.remaining() as u64) < len {
             // saturate rather than truncate the reported expected size on
             // 32-bit targets where the claimed length exceeds usize::MAX
             Err(Error::NotEnough(
-                self.data.len(),
+                self.remaining(),
                 core::cmp::min(len, usize::MAX as u64) as usize,
             ))
         } else {
@@ -393,12 +425,13 @@ impl Deserializer {
         }
     }
 
-    /// consume the given `len` from the underlying buffer. Skipped bytes are
-    /// then lost, they cannot be retrieved for future references.
+    /// consume the given `len` from the underlying buffer. This is `O(1)` and
+    /// does not move memory; skipped bytes remain recoverable by rewinding
+    /// with [`Self::set_position`].
     #[inline]
     pub fn advance(&mut self, len: usize) -> Result<()> {
         self.ensure(len as u64)?;
-        self.data.drain(..len);
+        self.offset += len;
 
         Ok(())
     }
@@ -556,7 +589,7 @@ impl Deserializer {
                         LenSz::Len(len, sz) => {
                             self.advance(1 + sz.bytes_following())?;
                             self.ensure(len)?;
-                            bytes.extend_from_slice(&self.data[0..len as usize]);
+                            bytes.extend_from_slice(&self.as_slice()[0..len as usize]);
                             self.advance(len as usize)?;
                             chunk_lens.push((len, sz));
                         }
@@ -566,7 +599,7 @@ impl Deserializer {
             }
             LenSz::Len(len, sz) => {
                 self.ensure(len)?;
-                let bytes = &self.data[0..len as usize];
+                let bytes = &self.as_slice()[0..len as usize];
                 let bytes_vec = Vec::from(bytes);
                 self.advance(len as usize)?;
                 Ok((bytes_vec, StringLenSz::Len(sz)))
@@ -615,7 +648,7 @@ impl Deserializer {
                             // read each chunk separately as a definite encoded UTF-8 string
                             self.advance(1 + sz.bytes_following())?;
                             self.ensure(len)?;
-                            let bytes = &self.data[0..len as usize];
+                            let bytes = &self.as_slice()[0..len as usize];
                             let chunk_text = String::from_utf8_lossy(bytes).into_owned();
                             self.advance(len as usize)?;
                             text.push_str(&chunk_text);
@@ -627,7 +660,7 @@ impl Deserializer {
             }
             LenSz::Len(len, sz) => {
                 self.ensure(len)?;
-                let bytes = &self.data[0..len as usize];
+                let bytes = &self.as_slice()[0..len as usize];
                 let text = String::from_utf8_lossy(bytes).into_owned();
                 self.advance(len as usize)?;
                 Ok((text, StringLenSz::Len(sz)))
@@ -900,7 +933,7 @@ impl Deserializer {
         T: Deserialize,
     {
         let v = self.deserialize()?;
-        if !self.data.is_empty() {
+        if self.remaining() != 0 {
             Err(Error::TrailingData)
         } else {
             Ok(v)
@@ -1052,6 +1085,103 @@ mod test {
     fn advance_past_end_errors() {
         let mut raw = Deserializer::from(vec![0x00]);
         assert!(matches!(raw.advance(2), Err(Error::NotEnough(1, 2))));
+    }
+
+    #[test]
+    fn set_position_bounds() {
+        let mut raw = Deserializer::from(vec![0x01, 0x02, 0x03]);
+        assert_eq!(raw.position(), 0);
+        raw.unsigned_integer().unwrap();
+        assert_eq!(raw.position(), 1);
+        // the fully-consumed state (== buffer len) is a valid position
+        raw.set_position(3).unwrap();
+        assert!(raw.as_slice().is_empty());
+        assert!(matches!(raw.set_position(4), Err(Error::NotEnough(3, 4))));
+        // a failed set_position leaves the position untouched
+        assert_eq!(raw.position(), 3);
+        // set_position(position()) is a no-op
+        raw.set_position(1).unwrap();
+        raw.set_position(raw.position()).unwrap();
+        assert_eq!(raw.position(), 1);
+        assert_eq!(raw.as_slice(), &[0x02, 0x03]);
+    }
+
+    #[test]
+    fn rewind_after_wrong_type_parse() {
+        let mut raw = Deserializer::from(vec![0x18, 0x40]);
+        let p = raw.position();
+        assert!(raw.text().is_err());
+        raw.set_position(p).unwrap();
+        assert_eq!(raw.unsigned_integer().unwrap(), 64);
+    }
+
+    #[test]
+    fn reads_after_partial_consumption() {
+        // back-to-back items: an offset-blind slice would re-read the
+        // consumed prefix and return silently wrong data
+        let mut raw = Deserializer::from(vec![0x41, 0xAA, 0x42, 0xBB, 0xCC]);
+        assert_eq!(raw.bytes().unwrap(), vec![0xAA]);
+        assert_eq!(raw.bytes().unwrap(), vec![0xBB, 0xCC]);
+
+        let mut raw = Deserializer::from(vec![0x61, 0x61, 0x62, 0x62, 0x63]);
+        assert_eq!(raw.text().unwrap(), "a");
+        assert_eq!(raw.text().unwrap(), "bc");
+    }
+
+    #[test]
+    fn ensure_is_offset_aware() {
+        // after consuming 2 of 5 bytes, the next item claims 5 bytes: more
+        // than the remaining 2 but not more than the total buffer, which an
+        // offset-blind ensure() would wrongly accept (NotEnough payload is
+        // remaining-relative: 2 left after the header byte... 5 needed)
+        let mut raw = Deserializer::from(vec![0x41, 0xAA, 0x45, 0x01, 0x02]);
+        assert_eq!(raw.bytes().unwrap(), vec![0xAA]);
+        assert!(matches!(raw.bytes(), Err(Error::NotEnough(2, 5))));
+    }
+
+    #[test]
+    fn display_prints_remaining_bytes() {
+        let mut raw = Deserializer::from(vec![0x18, 0x40, 0xBB]);
+        raw.unsigned_integer().unwrap();
+        assert_eq!(format!("{}", raw), "bb");
+    }
+
+    #[test]
+    fn deserialize_complete_checks_remaining() {
+        let mut raw = Deserializer::from(vec![0x01]);
+        assert_eq!(raw.deserialize_complete::<u8>().unwrap(), 1);
+        let mut raw = Deserializer::from(vec![0x01, 0x02]);
+        assert!(matches!(
+            raw.deserialize_complete::<u8>(),
+            Err(Error::TrailingData)
+        ));
+    }
+
+    // manual smoke test for the O(1) advance contract: under the old
+    // drain(..len) implementation this is O(n^2) and takes hours; run with
+    // `cargo test --release -- --ignored`. Kept out of CI (qemu cross-target
+    // jobs make anything wall-clock-sensitive flaky).
+    #[test]
+    #[ignore]
+    fn advance_is_constant_time_smoke() {
+        use se::Serializer;
+        const N: u64 = 10_000_000;
+        let mut se = Serializer::new_vec();
+        for i in 0..N {
+            se.write_unsigned_integer(i).unwrap();
+        }
+        let mut raw = Deserializer::from(se.finalize());
+        for i in 0..N {
+            assert_eq!(raw.unsigned_integer().unwrap(), i);
+        }
+        assert!(raw.as_slice().is_empty());
+    }
+
+    #[test]
+    fn inner_returns_remaining_tail() {
+        let mut raw = Deserializer::from(vec![0x41, 0xAA, 0xFF]);
+        raw.bytes().unwrap();
+        assert_eq!(raw.inner(), vec![0xFF]);
     }
 
     #[test]
