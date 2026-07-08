@@ -184,6 +184,16 @@ impl TryFrom<Special> for SpecialValue {
     }
 }
 
+/// an unassigned simple value with a well-formed encoding:
+/// `[0..=19]` or `[32..=255]` (RFC 8949 §3.3)
+#[cfg(test)]
+fn arbitrary_unassigned<G: Gen>(g: &mut G) -> u8 {
+    match u8::arbitrary(g) {
+        v @ 0x14..=0x1f => v + 12,
+        v => v,
+    }
+}
+
 #[cfg(test)]
 impl Arbitrary for SpecialValue {
     fn arbitrary<G: Gen>(g: &mut G) -> Self {
@@ -191,7 +201,7 @@ impl Arbitrary for SpecialValue {
             0 => SpecialValue::Bool(Arbitrary::arbitrary(g)),
             1 => SpecialValue::Null,
             2 => SpecialValue::Undefined,
-            3 => SpecialValue::Unassigned(Arbitrary::arbitrary(g)),
+            3 => SpecialValue::Unassigned(arbitrary_unassigned(g)),
             4 => SpecialValue::Null, // TODO: Float...
             _ => unreachable!(),
         }
@@ -205,7 +215,7 @@ impl Arbitrary for Special {
             0 => Special::Bool(Arbitrary::arbitrary(g)),
             1 => Special::Null,
             2 => Special::Undefined,
-            3 => Special::Unassigned(Arbitrary::arbitrary(g)),
+            3 => Special::Unassigned(arbitrary_unassigned(g)),
             4 => Special::Null, // TODO: Float...
             5 => Special::Break,
             _ => unreachable!(),

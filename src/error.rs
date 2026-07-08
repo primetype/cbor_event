@@ -40,6 +40,13 @@ pub enum Error {
     /// well-formed directly inside an indefinite-length container
     /// (RFC 8949 Appendix C)
     UnexpectedBreak,
+    /// a simple value in a non-well-formed form (RFC 8949 §3.3).
+    /// On decode: a reserved one-byte codepoint (`0xfc..=0xfe`) or the
+    /// two-byte form (`0xf8`) with value < 32. On encode:
+    /// `Special::Unassigned(20..=31)` — 20..=23 are assigned (use
+    /// `Special::Bool`/`Null`/`Undefined` instead) and 24..=31 have no
+    /// well-formed encoding at all
+    InvalidSimpleValue(u8),
 
     CustomError(String),
 }
@@ -99,6 +106,11 @@ impl fmt::Display for Error {
             UnexpectedBreak => write!(
                 f,
                 "Invalid cbor: break stop code outside an indefinite-length container"
+            ),
+            InvalidSimpleValue(v) => write!(
+                f,
+                "Invalid cbor: non-well-formed encoding of simple value {}",
+                v
             ),
             CustomError(err) => write!(f, "Invalid cbor: {}", err),
             InvalidNint(x) => write!(f, "Passed nint {} out of range", x),

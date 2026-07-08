@@ -735,6 +735,11 @@ impl Serializer {
             Special::Bool(true) => self.write_u8(Type::Special.to_byte(0x15)),
             Special::Null => self.write_u8(Type::Special.to_byte(0x16)),
             Special::Undefined => self.write_u8(Type::Special.to_byte(0x17)),
+            // 20..=23 are assigned (the Bool/Null/Undefined arms above);
+            // encoding them as Unassigned would alias those variants and
+            // break round-tripping. 24..=31 have no well-formed encoding
+            // at all (RFC 8949 §3.3)
+            Special::Unassigned(v @ 0x14..=0x1f) => Err(Error::InvalidSimpleValue(v)),
             Special::Unassigned(v) => self
                 .write_u8(Type::Special.to_byte(0x18))
                 .and_then(|s| s.write_u8(v)),
@@ -1005,7 +1010,20 @@ mod test {
         assert!(test_special(Special::Unassigned(1), [0xe1].as_ref()));
         assert!(test_special(Special::Unassigned(10), [0xea].as_ref()));
         assert!(test_special(Special::Unassigned(19), [0xf3].as_ref()));
-        assert!(test_special(Special::Unassigned(24), [0xf8, 0x18].as_ref()));
+        assert!(test_special(Special::Unassigned(32), [0xf8, 0x20].as_ref()));
+        assert!(test_special(
+            Special::Unassigned(255),
+            [0xf8, 0xff].as_ref()
+        ));
+    }
+
+    #[test]
+    fn special_unassigned_no_well_formed_encoding() {
+        for v in 20..=31 {
+            assert!(Serializer::new_vec()
+                .write_special(Special::Unassigned(v))
+                .is_err());
+        }
     }
 
     #[test]
