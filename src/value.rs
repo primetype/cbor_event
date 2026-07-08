@@ -10,8 +10,6 @@
 //! This is why all the objects here are marked as deprecated
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 #[cfg(test)]
@@ -22,52 +20,12 @@ use quickcheck::{Arbitrary, Gen};
 
 use core::convert::TryFrom;
 use de::*;
+#[cfg(test)]
 use error::Error;
 use len::Len;
 use result::Result;
 use se::*;
 use types::{Special, SpecialValue, Type};
-
-/// CBOR Object key, represents the possible supported values for
-/// a CBOR key in a CBOR Map.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ObjectKey {
-    Integer(u64),
-    Bytes(Vec<u8>),
-    Text(String),
-}
-impl ObjectKey {
-    /// convert the given `ObjectKey` into a CBOR [`Value`](./struct.Value.html)
-    pub fn value(self) -> Value {
-        match self {
-            ObjectKey::Integer(v) => Value::U64(v),
-            ObjectKey::Bytes(v) => Value::Bytes(v),
-            ObjectKey::Text(v) => Value::Text(v),
-        }
-    }
-}
-impl Serialize for ObjectKey {
-    fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
-        match self {
-            ObjectKey::Integer(ref v) => serializer.write_unsigned_integer(*v),
-            ObjectKey::Bytes(ref v) => serializer.write_bytes(v),
-            ObjectKey::Text(ref v) => serializer.write_text(v),
-        }
-    }
-}
-impl Deserialize for ObjectKey {
-    fn deserialize(raw: &mut Deserializer) -> Result<Self> {
-        match raw.cbor_type()? {
-            Type::UnsignedInteger => Ok(ObjectKey::Integer(raw.unsigned_integer()?)),
-            Type::Bytes => Ok(ObjectKey::Bytes(raw.bytes()?)),
-            Type::Text => Ok(ObjectKey::Text(raw.text()?)),
-            t => Err(Error::CustomError(format!(
-                "Type `{:?}' is not a support type for CBOR Map's key",
-                t
-            ))),
-        }
-    }
-}
 
 /// All possible CBOR supported values.
 ///
@@ -83,8 +41,12 @@ pub enum Value {
     Text(String),
     Array(Vec<Value>),
     IArray(Vec<Value>),
-    Object(BTreeMap<ObjectKey, Value>),
-    IObject(BTreeMap<ObjectKey, Value>),
+    /// maps are key-order-preserving pairs of arbitrary `Value`s: RFC 8949
+    /// §3.1 allows any type as a map key, and §5.6 leaves duplicate-key
+    /// handling to the protocol, so the decoder passes every entry through
+    /// in wire order rather than deduplicating or sorting
+    Object(Vec<(Value, Value)>),
+    IObject(Vec<(Value, Value)>),
     Tag(u64, Box<Value>),
     /// holds [`SpecialValue`], not [`Special`]:
     /// Break is a wire-level terminator, not a data item, so a `Value` cannot contain one
@@ -117,15 +79,15 @@ impl Serialize for Value {
             }
             Value::Object(ref v) => {
                 serializer.write_map(Len::Len(v.len() as u64))?;
-                for element in v {
-                    serializer.serialize(element.0)?.serialize(element.1)?;
+                for (key, value) in v {
+                    serializer.serialize(key)?.serialize(value)?;
                 }
                 Ok(serializer)
             }
             Value::IObject(ref v) => {
                 serializer.write_map(Len::Indefinite)?;
-                for element in v {
-                    serializer.serialize(element.0)?.serialize(element.1)?;
+                for (key, value) in v {
+                    serializer.serialize(key)?.serialize(value)?;
                 }
                 serializer.write_special(Special::Break)
             }
@@ -161,13 +123,13 @@ impl Deserialize for Value {
             }
             Type::Map => {
                 let len = raw.map()?;
-                let mut vec = BTreeMap::new();
+                let mut vec = Vec::new();
                 match len {
                     Len::Indefinite => {
                         while raw.cbor_type()? != Type::Special || !raw.special_break()? {
                             let k = Deserialize::deserialize(raw)?;
                             let v = Deserialize::deserialize(raw)?;
-                            vec.insert(k, v);
+                            vec.push((k, v));
                         }
                         Ok(Value::IObject(vec))
                     }
@@ -175,7 +137,7 @@ impl Deserialize for Value {
                         for _ in 0..len {
                             let k = Deserialize::deserialize(raw)?;
                             let v = Deserialize::deserialize(raw)?;
-                            vec.insert(k, v);
+                            vec.push((k, v));
                         }
                         Ok(Value::Object(vec))
                     }
@@ -189,18 +151,6 @@ impl Deserialize for Value {
             // The indefinite-length loops above consume the terminating Break
             // before recursing, so a Break reaching this arm is always dangling
             Type::Special => Ok(Value::Special(SpecialValue::try_from(raw.special()?)?)),
-        }
-    }
-}
-
-#[cfg(test)]
-impl Arbitrary for ObjectKey {
-    fn arbitrary<G: Gen>(g: &mut G) -> Self {
-        match u8::arbitrary(g) % 3 {
-            0 => ObjectKey::Integer(Arbitrary::arbitrary(g)),
-            1 => ObjectKey::Bytes(Arbitrary::arbitrary(g)),
-            2 => ObjectKey::Text(Arbitrary::arbitrary(g)),
-            _ => unreachable!(),
         }
     }
 }
@@ -261,7 +211,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
                 Value::Object(
                     repeat_with(|| {
                         (
-                            ObjectKey::arbitrary(g),
+                            arbitrary_value_indefinite(counter - 1, g),
                             arbitrary_value_indefinite(counter - 1, g),
                         )
                     })
@@ -274,7 +224,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
                 Value::IObject(
                     repeat_with(|| {
                         (
-                            ObjectKey::arbitrary(g),
+                            arbitrary_value_indefinite(counter - 1, g),
                             arbitrary_value_indefinite(counter - 1, g),
                         )
                     })
@@ -345,13 +295,13 @@ mod test {
 
     #[test]
     fn text_invalid_utf8_rejected() {
-        // regression guard: Value/ObjectKey text decoding must stay strict
+        // regression guard: Value text decoding must stay strict
         // even if text_sz() internals change
         let mut raw = Deserializer::from(vec![0x62, 0xff, 0xfe]);
         let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
         assert!(matches!(decoded, Err(Error::InvalidTextError(_))));
 
-        // map with an invalid-UTF-8 text key (exercises ObjectKey)
+        // map with an invalid-UTF-8 text key (exercises key decoding)
         let mut raw = Deserializer::from(vec![0xa1, 0x62, 0xff, 0xfe, 0x01]);
         let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
         assert!(matches!(decoded, Err(Error::InvalidTextError(_))));
@@ -400,6 +350,52 @@ mod test {
         assert!(test_encode_decode(&Value::Tag(24, Box::new(Value::Bytes(vec![0; 32])))).unwrap());
         assert!(
             test_encode_decode(&Value::Tag(0x1ff, Box::new(Value::Bytes(vec![0; 624])))).unwrap()
+        );
+    }
+
+    // RFC 8949 §3.1 allows any type as a map key
+    #[test]
+    fn map_with_arbitrary_key_types() {
+        // a1 20 01 = {-1: 1} (e.g. COSE negative integer labels)
+        let mut raw = Deserializer::from(vec![0xa1, 0x20, 0x01]);
+        let decoded: Value = raw.deserialize().unwrap();
+        assert_eq!(
+            decoded,
+            Value::Object(vec![(Value::I64(-1), Value::U64(1))])
+        );
+
+        // a1 81 01 02 = {[1]: 2}, a container as key
+        let mut raw = Deserializer::from(vec![0xa1, 0x81, 0x01, 0x02]);
+        let decoded: Value = raw.deserialize().unwrap();
+        assert_eq!(
+            decoded,
+            Value::Object(vec![(Value::Array(vec![Value::U64(1)]), Value::U64(2))])
+        );
+
+        assert!(test_encode_decode(&decoded).unwrap());
+    }
+
+    // RFC 8949 §5.6: duplicate-key handling belongs to the protocol, so the
+    // decoder passes all entries through; wire order must survive re-encoding
+    #[test]
+    fn map_preserves_duplicate_keys_and_order() {
+        // a3 02 02 01 01 02 03 = {2: 2, 1: 1, 2: 3}
+        let mut raw = Deserializer::from(vec![0xa3, 0x02, 0x02, 0x01, 0x01, 0x02, 0x03]);
+        let decoded: Value = raw.deserialize().unwrap();
+        assert_eq!(
+            decoded,
+            Value::Object(vec![
+                (Value::U64(2), Value::U64(2)),
+                (Value::U64(1), Value::U64(1)),
+                (Value::U64(2), Value::U64(3)),
+            ])
+        );
+
+        let mut se = Serializer::new_vec();
+        decoded.serialize(&mut se).unwrap();
+        assert_eq!(
+            se.finalize(),
+            vec![0xa3, 0x02, 0x02, 0x01, 0x01, 0x02, 0x03]
         );
     }
 

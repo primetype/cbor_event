@@ -25,15 +25,15 @@
 
 extern crate cbor_event;
 use cbor_event::de::Deserializer;
-use cbor_event::{ObjectKey, SpecialValue, Value};
+use cbor_event::{SpecialValue, Value};
 use std::collections::BTreeMap;
 
 fn de_value(bytes: &[u8]) -> cbor_event::Result<Value> {
     Deserializer::from(bytes.to_vec()).deserialize::<Value>()
 }
 
-fn text_key(s: &str) -> ObjectKey {
-    ObjectKey::Text(s.to_owned())
+fn text_key(s: &str) -> Value {
+    Value::Text(s.to_owned())
 }
 
 // class 1 (Break as first item): 9fff = [_ ], RFC 8949
@@ -45,10 +45,7 @@ fn value_empty_indefinite_array() {
 // class 1, map position: bfff = {_ }
 #[test]
 fn value_empty_indefinite_map() {
-    assert_eq!(
-        de_value(&[0xbf, 0xff]).unwrap(),
-        Value::IObject(BTreeMap::new())
-    );
+    assert_eq!(de_value(&[0xbf, 0xff]).unwrap(), Value::IObject(vec![]));
 }
 
 // class 2: 9ff4ff = [_ false] -- used to panic on the Break assertion
@@ -63,9 +60,11 @@ fn value_indefinite_array_with_bool() {
 // classes 2+3 in map position: bf6346756ef563416d7421ff = {_ "Fun": true, "Amt": -2}, RFC 8949
 #[test]
 fn value_indefinite_map_rfc_vector() {
-    let mut expected = BTreeMap::new();
-    expected.insert(text_key("Fun"), Value::Special(SpecialValue::Bool(true)));
-    expected.insert(text_key("Amt"), Value::I64(-2));
+    // entries appear in wire order
+    let expected = vec![
+        (text_key("Fun"), Value::Special(SpecialValue::Bool(true))),
+        (text_key("Amt"), Value::I64(-2)),
+    ];
     assert_eq!(
         de_value(&[0xbf, 0x63, 0x46, 0x75, 0x6e, 0xf5, 0x63, 0x41, 0x6d, 0x74, 0x21, 0xff])
             .unwrap(),
@@ -91,23 +90,30 @@ fn value_nested_mixed_arrays_rfc_vector() {
 // bf61610161629f0203ffff = {_ "a": 1, "b": [_ 2, 3]}, RFC 8949
 #[test]
 fn value_indefinite_map_nested_rfc_vector() {
-    let mut expected = BTreeMap::new();
-    expected.insert(text_key("a"), Value::U64(1));
-    expected.insert(
-        text_key("b"),
-        Value::IArray(vec![Value::U64(2), Value::U64(3)]),
-    );
+    let expected = vec![
+        (text_key("a"), Value::U64(1)),
+        (
+            text_key("b"),
+            Value::IArray(vec![Value::U64(2), Value::U64(3)]),
+        ),
+    ];
     assert_eq!(
         de_value(&[0xbf, 0x61, 0x61, 0x01, 0x61, 0x62, 0x9f, 0x02, 0x03, 0xff, 0xff]).unwrap(),
         Value::IObject(expected)
     );
 }
 
-// bff401ff = {_ false: 1} -- valid CBOR, but bool is not representable as an
-// ObjectKey in this crate: must be an error, never a panic
+// bff401ff = {_ false: 1} -- RFC 8949 §3.1 allows any type as a map key;
+// used to error because map keys were the restricted ObjectKey enum
 #[test]
-fn value_indefinite_map_with_special_key_errors() {
-    assert!(de_value(&[0xbf, 0xf4, 0x01, 0xff]).is_err());
+fn value_indefinite_map_with_special_key() {
+    assert_eq!(
+        de_value(&[0xbf, 0xf4, 0x01, 0xff]).unwrap(),
+        Value::IObject(vec![(
+            Value::Special(SpecialValue::Bool(false)),
+            Value::U64(1)
+        )])
+    );
 }
 
 // class 4: 9ff4 = [_ false <EOF, Break and any further elements missing
