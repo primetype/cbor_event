@@ -16,8 +16,11 @@ pub enum Error {
     ExpectedI16,
     ExpectedI32,
     ExpectedI64,
-    /// not enough data, the first element is the actual size, the second is
-    /// the expected size.
+    /// not enough data.
+    /// 1st element is the number of bytes available in the current buffer
+    /// 2nd element is the total number of bytes needed from the current buffer position.
+    /// Exception: `Deserializer::set_position` measures both from the buffer
+    /// start instead: `(buffer_len, requested_position)`.
     NotEnough(usize, usize),
     /// Were expecting a different [`Type`](../enum.Type.html). The first
     /// element is the expected type, the second is the current type.

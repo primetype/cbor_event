@@ -189,9 +189,10 @@ impl<T: Deserialize> Deserialize for Option<T> {
 /// When deserialising from `Deserializer` it is possible to see the following
 /// [`Error`]s:
 ///
-/// - `Error::NotEnough(remaining_size, needed_size)`: meaning we are expecting
-///   more bytes to parse the CBOR properly (`remaining_size` is the number of
-///   not-yet-consumed bytes, not the total buffer size);
+/// - `Error::NotEnough(available_size, needed_size)`: meaning the current
+///   buffer has fewer bytes available than are needed to parse the CBOR
+///   properly (`available_size` is the number of not-yet-consumed bytes, not
+///   the total buffer size);
 /// - `Error::Expected(expected_type, current_type)`: the current cbor primary
 ///   [`Type`] is different from the expected [`Type`];
 /// - `Error::UnknownLenType(byte)`: the CBOR is serialized in an unknown
@@ -270,24 +271,31 @@ impl Deserializer {
     /// `index` is relative to the current read position.
     #[inline]
     fn get(&mut self, index: usize) -> Result<u8> {
-        match self.data.get(self.offset + index) {
-            None => Err(Error::NotEnough(self.remaining(), index)),
+        match self
+            .offset
+            .checked_add(index)
+            .and_then(|pos| self.data.get(pos))
+        {
+            None => Err(Error::NotEnough(self.remaining(), index.saturating_add(1))),
             Some(b) => Ok(*b),
         }
     }
     #[inline]
     fn u8(&mut self, index: usize) -> Result<u64> {
+        self.ensure(index.saturating_add(1) as u64)?;
         let b = self.get(index)?;
         Ok(b as u64)
     }
     #[inline]
     fn u16(&mut self, index: usize) -> Result<u64> {
+        self.ensure(index.saturating_add(2) as u64)?;
         let b1 = self.u8(index)?;
         let b2 = self.u8(index + 1)?;
         Ok(b1 << 8 | b2)
     }
     #[inline]
     fn u32(&mut self, index: usize) -> Result<u64> {
+        self.ensure(index.saturating_add(4) as u64)?;
         let b1 = self.u8(index)?;
         let b2 = self.u8(index + 1)?;
         let b3 = self.u8(index + 2)?;
@@ -296,6 +304,7 @@ impl Deserializer {
     }
     #[inline]
     fn u64(&mut self, index: usize) -> Result<u64> {
+        self.ensure(index.saturating_add(8) as u64)?;
         let b1 = self.u8(index)?;
         let b2 = self.u8(index + 1)?;
         let b3 = self.u8(index + 2)?;
@@ -1182,6 +1191,36 @@ mod test {
         let mut raw = Deserializer::from(vec![0x41, 0xAA, 0xFF]);
         raw.bytes().unwrap();
         assert_eq!(raw.inner(), vec![0xFF]);
+    }
+
+    #[test]
+    fn truncated_value_headers_report_needed_bytes() {
+        let mut empty = Deserializer::from(vec![]);
+        assert!(matches!(empty.cbor_type(), Err(Error::NotEnough(0, 1))));
+
+        let mut u8_len = Deserializer::from(vec![0x18]);
+        assert!(matches!(
+            u8_len.unsigned_integer(),
+            Err(Error::NotEnough(1, 2))
+        ));
+
+        let mut u16_len = Deserializer::from(vec![0x19, 0x01]);
+        assert!(matches!(
+            u16_len.unsigned_integer(),
+            Err(Error::NotEnough(2, 3))
+        ));
+
+        let mut u32_len = Deserializer::from(vec![0x1a, 0x01, 0x02, 0x03]);
+        assert!(matches!(
+            u32_len.unsigned_integer(),
+            Err(Error::NotEnough(4, 5))
+        ));
+
+        let mut u64_len = Deserializer::from(vec![0x1b, 0x01, 0x02, 0x03, 0x04]);
+        assert!(matches!(
+            u64_len.unsigned_integer(),
+            Err(Error::NotEnough(5, 9))
+        ));
     }
 
     #[test]
