@@ -1,4 +1,5 @@
 use alloc::format;
+use core::convert::TryFrom;
 use error::Error;
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
@@ -58,11 +59,13 @@ pub enum Special {
     Bool(bool),
     Null,
     Undefined,
-    /// Free to use values within: `[0..=13]` and `[24..=31]`
+    /// unassigned simple values: `[0..=19]` and `[32..=255]`
+    /// (RFC 8949 §3.3; 20..=23 are bool/null/undefined, 24..=31 are
+    /// argument widths, reserved, or Break)
     Unassigned(u8),
 
-    /// Float is not fully supported in this library and it is advised
-    /// to avoid using it for now.
+    /// floats decode from any width (f16/f32/f64) but always serialize
+    /// as f64
     Float(f64),
     /// mark the stop of a given indefinite-length item
     Break,
@@ -131,6 +134,66 @@ impl Special {
                 "Expected Special::Break, received {:?}",
                 self
             ))),
+        }
+    }
+}
+
+/// CBOR special values as they exist in the data model (RFC 8949 §2):
+/// [`Special`] minus `Break`. Break is a wire-level terminator for
+/// indefinite-length containers, not a data item (RFC 8949 Appendix C),
+/// so [`Value`](../enum.Value.html) stores this type instead, making a
+/// dangling Break unrepresentable.
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub enum SpecialValue {
+    Bool(bool),
+    Null,
+    Undefined,
+    /// unassigned simple values: `[0..=19]` and `[32..=255]`
+    /// (RFC 8949 §3.3; 20..=23 are bool/null/undefined, 24..=31 are
+    /// argument widths, reserved, or Break)
+    Unassigned(u8),
+
+    /// floats decode from any width (f16/f32/f64) but always serialize
+    /// as f64
+    Float(f64),
+}
+
+impl From<SpecialValue> for Special {
+    fn from(v: SpecialValue) -> Special {
+        match v {
+            SpecialValue::Bool(b) => Special::Bool(b),
+            SpecialValue::Null => Special::Null,
+            SpecialValue::Undefined => Special::Undefined,
+            SpecialValue::Unassigned(u) => Special::Unassigned(u),
+            SpecialValue::Float(f) => Special::Float(f),
+        }
+    }
+}
+
+impl TryFrom<Special> for SpecialValue {
+    type Error = Error;
+    fn try_from(s: Special) -> Result<SpecialValue> {
+        match s {
+            Special::Bool(b) => Ok(SpecialValue::Bool(b)),
+            Special::Null => Ok(SpecialValue::Null),
+            Special::Undefined => Ok(SpecialValue::Undefined),
+            Special::Unassigned(u) => Ok(SpecialValue::Unassigned(u)),
+            Special::Float(f) => Ok(SpecialValue::Float(f)),
+            Special::Break => Err(Error::UnexpectedBreak),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for SpecialValue {
+    fn arbitrary<G: Gen>(g: &mut G) -> Self {
+        match u8::arbitrary(g) % 5 {
+            0 => SpecialValue::Bool(Arbitrary::arbitrary(g)),
+            1 => SpecialValue::Null,
+            2 => SpecialValue::Undefined,
+            3 => SpecialValue::Unassigned(Arbitrary::arbitrary(g)),
+            4 => SpecialValue::Null, // TODO: Float...
+            _ => unreachable!(),
         }
     }
 }
