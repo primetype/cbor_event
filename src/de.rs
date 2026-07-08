@@ -677,7 +677,7 @@ impl Deserializer {
     {
         match len {
             Len::Indefinite => {
-                while !self.special_break()? {
+                while self.cbor_type()? != Type::Special || !self.special_break()? {
                     f(self)?;
                 }
             }

@@ -143,17 +143,9 @@ impl Deserialize for Value {
                 let mut vec = Vec::new();
                 match len {
                     Len::Indefinite => {
-                        while {
-                            let t = raw.cbor_type()?;
-                            if t == Type::Special {
-                                let special = raw.special()?;
-                                assert_eq!(special, Special::Break);
-                                false
-                            } else {
-                                vec.push(Deserialize::deserialize(raw)?);
-                                true
-                            }
-                        } {}
+                        while raw.cbor_type()? != Type::Special || !raw.special_break()? {
+                            vec.push(Deserialize::deserialize(raw)?);
+                        }
                         Ok(Value::IArray(vec))
                     }
                     Len::Len(len) => {
@@ -169,19 +161,11 @@ impl Deserialize for Value {
                 let mut vec = BTreeMap::new();
                 match len {
                     Len::Indefinite => {
-                        while {
-                            let t = raw.cbor_type()?;
-                            if t == Type::Special {
-                                let special = raw.special()?;
-                                assert_eq!(special, Special::Break);
-                                false
-                            } else {
-                                let k = Deserialize::deserialize(raw)?;
-                                let v = Deserialize::deserialize(raw)?;
-                                vec.insert(k, v);
-                                true
-                            }
-                        } {}
+                        while raw.cbor_type()? != Type::Special || !raw.special_break()? {
+                            let k = Deserialize::deserialize(raw)?;
+                            let v = Deserialize::deserialize(raw)?;
+                            vec.insert(k, v);
+                        }
                         Ok(Value::IObject(vec))
                     }
                     Len::Len(len) => {
@@ -228,6 +212,16 @@ fn arbitrary_negative_i64<G: Gen>(g: &mut G) -> i64 {
     }
 }
 
+// Break is a wire-level terminator, not a data value: inside an indefinite
+// container it changes the structure and cannot round-trip
+#[cfg(test)]
+fn arbitrary_special_non_break<G: Gen>(g: &mut G) -> Special {
+    match Special::arbitrary(g) {
+        Special::Break => Special::Null,
+        s => s,
+    }
+}
+
 #[cfg(test)]
 fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
     match u8::arbitrary(g) % 5 {
@@ -235,7 +229,7 @@ fn arbitrary_value_finite<G: Gen>(g: &mut G) -> Value {
         1 => Value::I64(arbitrary_negative_i64(g)),
         2 => Value::Bytes(Arbitrary::arbitrary(g)),
         3 => Value::Text(Arbitrary::arbitrary(g)),
-        4 => Value::Special(Arbitrary::arbitrary(g)),
+        4 => Value::Special(arbitrary_special_non_break(g)),
         _ => unreachable!(),
     }
 }
@@ -245,7 +239,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
     if counter == 0 {
         arbitrary_value_finite(g)
     } else {
-        match u8::arbitrary(g) % 5 {
+        match u8::arbitrary(g) % 10 {
             0 => Value::U64(u64::arbitrary(g)),
             1 => Value::I64(arbitrary_negative_i64(g)),
             2 => Value::Bytes(Arbitrary::arbitrary(g)),
@@ -296,7 +290,7 @@ fn arbitrary_value_indefinite<G: Gen>(counter: usize, g: &mut G) -> Value {
                 u64::arbitrary(g),
                 arbitrary_value_indefinite(counter - 1, g).into(),
             ),
-            9 => Value::Special(Arbitrary::arbitrary(g)),
+            9 => Value::Special(arbitrary_special_non_break(g)),
             _ => unreachable!(),
         }
     }
