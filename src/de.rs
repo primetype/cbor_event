@@ -644,12 +644,12 @@ impl Deserializer {
                     match chunk_len {
                         LenSz::Indefinite => return Err(Error::InvalidIndefiniteString),
                         LenSz::Len(len, sz) => {
-                            // rfc7049 forbids splitting UTF-8 characters across chunks so we must
-                            // read each chunk separately as a definite encoded UTF-8 string
+                            // RFC 8949 §3.2.3 forbids splitting UTF-8 characters across chunks so
+                            // we must read each chunk separately as a definite encoded UTF-8 string
                             self.advance(1 + sz.bytes_following())?;
                             self.ensure(len)?;
                             let bytes = &self.as_slice()[0..len as usize];
-                            let chunk_text = String::from_utf8_lossy(bytes).into_owned();
+                            let chunk_text = String::from_utf8(bytes.to_vec())?;
                             self.advance(len as usize)?;
                             text.push_str(&chunk_text);
                             chunk_lens.push((len, sz));
@@ -661,7 +661,7 @@ impl Deserializer {
             LenSz::Len(len, sz) => {
                 self.ensure(len)?;
                 let bytes = &self.as_slice()[0..len as usize];
-                let text = String::from_utf8_lossy(bytes).into_owned();
+                let text = String::from_utf8(bytes.to_vec())?;
                 self.advance(len as usize)?;
                 Ok((text, StringLenSz::Len(sz)))
             }
@@ -1214,6 +1214,21 @@ mod test {
         let mut raw = Deserializer::from(vec.clone());
         let found = raw.text().unwrap();
         assert_eq!(found, expected);
+    }
+    #[test]
+    fn text_invalid_utf8() {
+        // definite: text of length 2 with invalid UTF-8 payload
+        let mut raw = Deserializer::from(vec![0x62, 0xff, 0xfe]);
+        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+
+        // indefinite: valid chunk "a" followed by an invalid-UTF-8 chunk
+        let mut raw = Deserializer::from(vec![0x7f, 0x61, 0x61, 0x62, 0xff, 0xfe, 0xff]);
+        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+
+        // indefinite: 'é' (0xc3 0xa9) split across two chunks — RFC 8949 §3.2.3
+        // requires every chunk to be valid UTF-8 on its own
+        let mut raw = Deserializer::from(vec![0x7f, 0x61, 0xc3, 0x61, 0xa9, 0xff]);
+        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
     }
     #[test]
     fn text_empty() {
