@@ -1,6 +1,6 @@
 extern crate cbor_event;
 use cbor_event::se::{
-    serialize_fixed_map, serialize_indefinite_array, serialize_indefinite_map, Serializer,
+    Serializer, serialize_fixed_map, serialize_indefinite_array, serialize_indefinite_map,
 };
 use std::collections::BTreeMap;
 

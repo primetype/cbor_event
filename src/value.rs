@@ -18,14 +18,14 @@ use core::iter::repeat_with;
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
 
-use core::convert::TryFrom;
-use de::*;
+use crate::de::*;
 #[cfg(test)]
-use error::Error;
-use len::Len;
-use result::Result;
-use se::*;
-use types::{Special, SpecialValue, Type};
+use crate::error::Error;
+use crate::len::Len;
+use crate::result::Result;
+use crate::se::*;
+use crate::types::{Special, SpecialValue, Type};
+use core::convert::TryFrom;
 
 /// All possible CBOR supported values.
 ///
@@ -56,43 +56,43 @@ pub enum Value {
 impl Serialize for Value {
     fn serialize<'se>(&self, serializer: &'se mut Serializer) -> Result<&'se mut Serializer> {
         match self {
-            Value::U64(ref v) => serializer.write_unsigned_integer(*v),
+            Value::U64(v) => serializer.write_unsigned_integer(*v),
             // RFC 8949 §3.1: CBOR has no signed-integer type; the sign picks
             // the major type. Non-negative values must be major type 0
-            Value::I64(ref v) if *v >= 0 => serializer.write_unsigned_integer(*v as u64),
-            Value::I64(ref v) => serializer.write_negative_integer(*v),
-            Value::Bytes(ref v) => serializer.write_bytes(v),
-            Value::Text(ref v) => serializer.write_text(v),
-            Value::Array(ref v) => {
+            Value::I64(v) if *v >= 0 => serializer.write_unsigned_integer(*v as u64),
+            Value::I64(v) => serializer.write_negative_integer(*v),
+            Value::Bytes(v) => serializer.write_bytes(v),
+            Value::Text(v) => serializer.write_text(v),
+            Value::Array(v) => {
                 serializer.write_array(Len::Len(v.len() as u64))?;
                 for element in v {
                     serializer.serialize(element)?;
                 }
                 Ok(serializer)
             }
-            Value::IArray(ref v) => {
+            Value::IArray(v) => {
                 serializer.write_array(Len::Indefinite)?;
                 for element in v {
                     serializer.serialize(element)?;
                 }
                 serializer.write_special(Special::Break)
             }
-            Value::Object(ref v) => {
+            Value::Object(v) => {
                 serializer.write_map(Len::Len(v.len() as u64))?;
                 for (key, value) in v {
                     serializer.serialize(key)?.serialize(value)?;
                 }
                 Ok(serializer)
             }
-            Value::IObject(ref v) => {
+            Value::IObject(v) => {
                 serializer.write_map(Len::Indefinite)?;
                 for (key, value) in v {
                     serializer.serialize(key)?.serialize(value)?;
                 }
                 serializer.write_special(Special::Break)
             }
-            Value::Tag(ref tag, ref v) => serializer.write_tag(*tag)?.serialize(v.as_ref()),
-            Value::Special(ref v) => serializer.write_special(Special::from(*v)),
+            Value::Tag(tag, v) => serializer.write_tag(*tag)?.serialize(v.as_ref()),
+            Value::Special(v) => serializer.write_special(Special::from(*v)),
         }
     }
 }
@@ -161,11 +161,7 @@ impl Deserialize for Value {
 #[cfg(test)]
 fn arbitrary_negative_i64<G: Gen>(g: &mut G) -> i64 {
     let v = i64::arbitrary(g);
-    if v < 0 {
-        v
-    } else {
-        -v - 1
-    }
+    if v < 0 { v } else { -v - 1 }
 }
 
 #[cfg(test)]
@@ -327,21 +323,25 @@ mod test {
     #[test]
     fn array() {
         assert!(test_encode_decode(&Value::Array(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::Array(vec![
-            Value::U64(0),
-            Value::Text("some text".to_owned())
-        ]))
-        .unwrap());
+        assert!(
+            test_encode_decode(&Value::Array(vec![
+                Value::U64(0),
+                Value::Text("some text".to_owned())
+            ]))
+            .unwrap()
+        );
     }
 
     #[test]
     fn iarray() {
         assert!(test_encode_decode(&Value::IArray(vec![])).unwrap());
-        assert!(test_encode_decode(&Value::IArray(vec![
-            Value::U64(0),
-            Value::Text("some text".to_owned())
-        ]))
-        .unwrap());
+        assert!(
+            test_encode_decode(&Value::IArray(vec![
+                Value::U64(0),
+                Value::Text("some text".to_owned())
+            ]))
+            .unwrap()
+        );
     }
 
     #[test]

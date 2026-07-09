@@ -2,8 +2,8 @@ use alloc::string::{FromUtf8Error, String};
 use alloc::vec::Vec;
 use core::fmt;
 
-use len;
-use types::Type;
+use crate::len;
+use crate::types::Type;
 
 /// all expected error for cbor parsing and serialising
 #[derive(Debug)]
@@ -58,7 +58,7 @@ impl From<FromUtf8Error> for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Error::*;
+        use crate::Error::*;
         match self {
             ExpectedU8 => write!(f, "Invalid cbor: expected 8bit long unsigned integer"),
             ExpectedU16 => write!(f, "Invalid cbor: expected 16bit long unsigned integer"),

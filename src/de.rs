@@ -1,14 +1,14 @@
 //! CBOR deserialisation tooling
 
+use crate::error::Error;
+use crate::len::{Len, LenSz, StringLenSz, Sz};
+use crate::result::Result;
+use crate::types::{Special, Type};
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::fmt::{Display, Formatter};
-use error::Error;
-use len::{Len, LenSz, StringLenSz, Sz};
-use result::Result;
-use types::{Special, Type};
 
 /// Decode an IEEE 754 binary16 (half-precision) bit pattern to f64,
 /// per RFC 8949 §3.3 / Appendix D.
@@ -34,11 +34,7 @@ fn f16_bits_to_f64(bits: u16) -> f64 {
         // since f64::powi/exp2 are std-only and this crate is no_std
         _ => (1024.0 + mant) * f64::from_bits(u64::from(exp + 1023 - 25) << 52),
     };
-    if bits & 0x8000 != 0 {
-        -mag
-    } else {
-        mag
-    }
+    if bits & 0x8000 != 0 { -mag } else { mag }
 }
 
 pub trait Deserialize: Sized {
@@ -1189,7 +1185,7 @@ mod test {
     #[test]
     #[ignore]
     fn advance_is_constant_time_smoke() {
-        use se::Serializer;
+        use crate::se::Serializer;
         const N: u64 = 10_000_000;
         let mut se = Serializer::new_vec();
         for i in 0..N {

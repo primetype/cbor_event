@@ -1,8 +1,8 @@
 [package]
 name = "cbor_event"
 version = "3.2.0"
-edition = "2015"
-rust-version = "1.81"
+edition = "2024"
+rust-version = "1.96.1"
 authors = ["Nicolas Di Prima <nicolas@primetype.co.uk>", "Vincent Hanquez <vincent@typed.io>"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"

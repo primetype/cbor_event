@@ -11,11 +11,7 @@ impl Len {
         matches!(self, Self::Len(0))
     }
     pub fn non_null(self) -> Option<Self> {
-        if self.is_null() {
-            None
-        } else {
-            Some(self)
-        }
+        if self.is_null() { None } else { Some(self) }
     }
 
     pub fn indefinite(&self) -> bool {

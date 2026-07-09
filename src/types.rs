@@ -1,9 +1,9 @@
+use crate::error::Error;
+use crate::result::Result;
 use alloc::format;
 use core::convert::TryFrom;
-use error::Error;
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
-use result::Result;
 
 /// CBOR Major Types
 ///

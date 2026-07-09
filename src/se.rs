@@ -3,10 +3,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::convert::TryInto;
 
-use error::Error;
-use len::{Len, LenSz, StringLenSz, Sz};
-use result::Result;
-use types::{Special, Type};
+use crate::error::Error;
+use crate::len::{Len, LenSz, StringLenSz, Sz};
+use crate::result::Result;
+use crate::types::{Special, Type};
 
 pub trait Serialize {
     fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer>;
@@ -1020,9 +1020,11 @@ mod test {
     #[test]
     fn special_unassigned_no_well_formed_encoding() {
         for v in 20..=31 {
-            assert!(Serializer::new_vec()
-                .write_special(Special::Unassigned(v))
-                .is_err());
+            assert!(
+                Serializer::new_vec()
+                    .write_special(Special::Unassigned(v))
+                    .is_err()
+            );
         }
     }
 
@@ -1093,9 +1095,11 @@ mod test {
 
         // just outside of cbor NINT range
         let big_nint = -(u64::MAX as i128) - 2;
-        assert!(serializer
-            .write_negative_integer_sz(big_nint, Sz::Eight)
-            .is_err());
+        assert!(
+            serializer
+                .write_negative_integer_sz(big_nint, Sz::Eight)
+                .is_err()
+        );
 
         let bytes = serializer.finalize();
         assert_eq!(bytes, expected_bytes);
@@ -1293,32 +1297,50 @@ mod test {
     #[test]
     fn write_type_doesnt_fit() {
         let mut serializer = Serializer::new_vec();
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, 23, Some(Sz::Inline))
-            .is_ok());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, 24, Some(Sz::Inline))
-            .is_err());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u8::MAX as u64, Some(Sz::One))
-            .is_ok());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u8::MAX as u64 + 1, Some(Sz::One))
-            .is_err());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u16::MAX as u64, Some(Sz::Two))
-            .is_ok());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u16::MAX as u64 + 1, Some(Sz::Two))
-            .is_err());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u32::MAX as u64, Some(Sz::Four))
-            .is_ok());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u32::MAX as u64 + 1, Some(Sz::Four))
-            .is_err());
-        assert!(serializer
-            .write_type_definite(Type::UnsignedInteger, u64::MAX, Some(Sz::Eight))
-            .is_ok());
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, 23, Some(Sz::Inline))
+                .is_ok()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, 24, Some(Sz::Inline))
+                .is_err()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, u8::MAX as u64, Some(Sz::One))
+                .is_ok()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, u8::MAX as u64 + 1, Some(Sz::One))
+                .is_err()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, u16::MAX as u64, Some(Sz::Two))
+                .is_ok()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, u16::MAX as u64 + 1, Some(Sz::Two))
+                .is_err()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, u32::MAX as u64, Some(Sz::Four))
+                .is_ok()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, u32::MAX as u64 + 1, Some(Sz::Four))
+                .is_err()
+        );
+        assert!(
+            serializer
+                .write_type_definite(Type::UnsignedInteger, u64::MAX, Some(Sz::Eight))
+                .is_ok()
+        );
     }
 }

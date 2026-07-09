@@ -72,13 +72,13 @@ pub mod se;
 mod types;
 mod value;
 
-pub use de::Deserialize;
-pub use error::Error;
-pub use len::*;
-pub use result::Result;
-pub use se::Serialize;
-pub use types::*;
-pub use value::Value;
+pub use crate::de::Deserialize;
+pub use crate::error::Error;
+pub use crate::len::*;
+pub use crate::result::Result;
+pub use crate::se::Serialize;
+pub use crate::types::*;
+pub use crate::value::Value;
 
 const MAX_INLINE_ENCODING: u64 = 23;
 
