@@ -78,7 +78,7 @@ pub use len::*;
 pub use result::Result;
 pub use se::Serialize;
 pub use types::*;
-pub use value::{ObjectKey, Value};
+pub use value::Value;
 
 const MAX_INLINE_ENCODING: u64 = 23;
 
