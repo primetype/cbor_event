@@ -1,6 +1,6 @@
 [package]
 name = "cbor_event"
-version = "3.1.0"
+version = "3.2.0"
 edition = "2015"
 rust-version = "1.81"
 authors = ["Nicolas Di Prima <nicolas@primetype.co.uk>", "Vincent Hanquez <vincent@typed.io>"]
