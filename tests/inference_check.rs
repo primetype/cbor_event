@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 fn helpers_callable_without_turbofish() {
     let mut map: BTreeMap<u64, u64> = BTreeMap::new();
     map.insert(1, 2);
-    let vec = vec![1u64, 2];
+    let vec = [1u64, 2];
     let mut s = Serializer::new_vec();
     serialize_fixed_map(map.iter(), &mut s).unwrap();
     serialize_indefinite_map(map.iter(), &mut s).unwrap();

@@ -19,6 +19,7 @@ pub enum Type {
     Special,
 }
 impl Type {
+    #[must_use]
     pub fn to_byte(self, len: u8) -> u8 {
         assert!(len <= 0b0001_1111);
 
@@ -33,6 +34,8 @@ impl Type {
             Type::Special => 0b1110_0000,
         }
     }
+
+    #[must_use]
     pub fn from_byte(byte: u8) -> Type {
         match byte & 0b1110_0000 {
             0b0000_0000 => Type::UnsignedInteger,
@@ -141,7 +144,7 @@ impl Special {
 /// CBOR special values as they exist in the data model (RFC 8949 §2):
 /// [`Special`] minus `Break`. Break is a wire-level terminator for
 /// indefinite-length containers, not a data item (RFC 8949 Appendix C),
-/// so [`Value`](../enum.Value.html) stores this type instead, making a
+/// so [`Value`](crate::Value) stores this type instead, making a
 /// dangling Break unrepresentable.
 #[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub enum SpecialValue {

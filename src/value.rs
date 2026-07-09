@@ -59,7 +59,8 @@ impl Serialize for Value {
             Value::U64(v) => serializer.write_unsigned_integer(*v),
             // RFC 8949 §3.1: CBOR has no signed-integer type; the sign picks
             // the major type. Non-negative values must be major type 0
-            Value::I64(v) if *v >= 0 => serializer.write_unsigned_integer(*v as u64),
+            Value::I64(v) if *v >= 0 => serializer
+                .write_unsigned_integer(u64::try_from(*v).expect("non-negative i64 fits u64")),
             Value::I64(v) => serializer.write_negative_integer(*v),
             Value::Bytes(v) => serializer.write_bytes(v),
             Value::Text(v) => serializer.write_text(v),
@@ -280,7 +281,7 @@ mod test {
             Value::I64(v).serialize(&mut se).unwrap();
             let mut raw = Deserializer::from(se.finalize());
             let decoded: Value = Deserialize::deserialize(&mut raw).unwrap();
-            assert_eq!(decoded, Value::U64(v as u64));
+            assert_eq!(decoded, Value::U64(u64::try_from(v).unwrap()));
         }
         // nints below i64::MIN cannot be represented by Value::I64,
         // so they fail to deserialize

@@ -22,11 +22,11 @@ pub enum Error {
     /// Exception: `Deserializer::set_position` measures both from the buffer
     /// start instead: `(buffer_len, requested_position)`.
     NotEnough(usize, usize),
-    /// Were expecting a different [`Type`](../enum.Type.html). The first
+    /// Were expecting a different [`Type`]. The first
     /// element is the expected type, the second is the current type.
     Expected(Type, Type),
     ExpectedSetTag,
-    /// this may happens when deserialising a [`Deserializer`](../de/struct.Deserializer.html);
+    /// this may happens when deserialising a [`Deserializer`](crate::de::Deserializer);
     UnknownLenType(u8),
     IndefiniteLenNotSupported(Type),
     WrongLen(u64, len::Len, &'static str),

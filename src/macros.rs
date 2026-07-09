@@ -2,7 +2,7 @@
 /// cbor binary.
 ///
 /// This performs an in memory serialisation and returns the
-/// buffer wrapped in a [`Result`](../enum.Result.html).
+/// buffer wrapped in a [`Result`](crate::Result).
 ///
 /// ```
 /// use cbor_event::cbor;
