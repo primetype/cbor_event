@@ -249,6 +249,7 @@ impl Arbitrary for Value {
 mod test {
     use alloc::borrow::ToOwned;
     use alloc::vec;
+    use core::assert_matches;
 
     use super::super::test_encode_decode;
     use super::*;
@@ -286,7 +287,7 @@ mod test {
         let mut raw =
             Deserializer::from(vec![0x3b, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
-        assert!(matches!(decoded, Err(Error::ExpectedI64)));
+        assert_matches!(decoded, Err(Error::ExpectedI64));
     }
 
     #[test]
@@ -295,12 +296,12 @@ mod test {
         // even if text_sz() internals change
         let mut raw = Deserializer::from(vec![0x62, 0xff, 0xfe]);
         let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
-        assert!(matches!(decoded, Err(Error::InvalidTextError(_))));
+        assert_matches!(decoded, Err(Error::InvalidTextError(_)));
 
         // map with an invalid-UTF-8 text key (exercises key decoding)
         let mut raw = Deserializer::from(vec![0xa1, 0x62, 0xff, 0xfe, 0x01]);
         let decoded: Result<Value> = Deserialize::deserialize(&mut raw);
-        assert!(matches!(decoded, Err(Error::InvalidTextError(_))));
+        assert_matches!(decoded, Err(Error::InvalidTextError(_)));
     }
 
     #[test]

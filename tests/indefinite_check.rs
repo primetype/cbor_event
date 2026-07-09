@@ -23,7 +23,6 @@
 //! indefinite-length containers (RFC 8949 section 8.1); any vector can be
 //! re-checked by pasting the hex into https://cbor.me.
 
-extern crate cbor_event;
 use cbor_event::de::Deserializer;
 use cbor_event::{SpecialValue, Value};
 use std::collections::BTreeMap;

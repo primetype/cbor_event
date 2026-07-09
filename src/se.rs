@@ -208,7 +208,7 @@ where
 const DEFAULT_CAPACITY: usize = 512;
 
 /// whether `len` is representable with the given length encoding
-fn sz_fits(sz: Sz, len: u64) -> bool {
+const fn sz_fits(sz: Sz, len: u64) -> bool {
     match sz {
         Sz::Inline => len <= super::MAX_INLINE_ENCODING,
         Sz::One => len < 0x1_00,
@@ -256,7 +256,7 @@ impl Serializer {
     }
 
     #[inline]
-    pub fn new(w: Vec<u8>) -> Self {
+    pub const fn new(w: Vec<u8>) -> Self {
         Serializer { data: w }
     }
 
@@ -784,6 +784,7 @@ mod test {
     use super::*;
     use alloc::vec;
     use alloc::vec::Vec;
+    use core::assert_matches;
 
     #[test]
     fn unsigned_integer_0() {
@@ -852,39 +853,39 @@ mod test {
         );
         // below -2^64 needs a bignum (tag 3), not major type 1
         let mut serializer = Serializer::new_vec();
-        assert!(matches!(
+        assert_matches!(
             serializer.write_negative_integer_sz(min_nint - 1, Sz::Eight),
             Err(Error::InvalidNint(_))
-        ));
+        );
         // i128::MIN doesn't panic (i.e.: no `-value - 1` bug)
-        assert!(matches!(
+        assert_matches!(
             serializer.write_negative_integer_sz(i128::MIN, Sz::Eight),
             Err(Error::InvalidNint(i128::MIN))
-        ));
+        );
         // non-negative is rejected like the i64 variant; i128::MAX would
         // overflow in `value + 1` if it reached the argument computation
-        assert!(matches!(
+        assert_matches!(
             serializer.write_negative_integer_sz(0, Sz::One),
             Err(Error::InvalidNint(0))
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             serializer.write_negative_integer_sz(i128::MAX, Sz::Eight),
             Err(Error::InvalidNint(i128::MAX))
-        ));
+        );
     }
 
     #[test]
     fn negative_integer_rejects_non_negative() {
         // RFC 8949 §3.1: major type 1 encodes only -2^64..=-1
         let mut serializer = Serializer::new_vec();
-        assert!(matches!(
+        assert_matches!(
             serializer.write_negative_integer(0),
             Err(Error::InvalidNint(0))
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             serializer.write_negative_integer(42),
             Err(Error::InvalidNint(42))
-        ));
+        );
     }
 
     #[test]
@@ -1205,7 +1206,7 @@ mod test {
             "é",
             StringLenSz::Indefinite(vec![(1, Sz::Inline), (1, Sz::Inline)]),
         );
-        assert!(matches!(result, Err(Error::InvalidTextError(_))));
+        assert_matches!(result, Err(Error::InvalidTextError(_)));
         // the failed write must not leave partial output in the buffer
         serializer.write_unsigned_integer(1).expect("write uint");
         assert_eq!(serializer.finalize(), vec![0x01]);
@@ -1219,7 +1220,7 @@ mod test {
             vec![0u8; 300],
             StringLenSz::Indefinite(vec![(300, Sz::Inline)]),
         );
-        assert!(matches!(result, Err(Error::InvalidLenPassed(Sz::Inline))));
+        assert_matches!(result, Err(Error::InvalidLenPassed(Sz::Inline)));
         serializer.write_unsigned_integer(1).expect("write uint");
         assert_eq!(serializer.finalize(), vec![0x01]);
     }

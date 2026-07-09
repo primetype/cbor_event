@@ -1,4 +1,3 @@
-extern crate cbor_event;
 use cbor_event::se::{
     Serializer, serialize_fixed_map, serialize_indefinite_array, serialize_indefinite_map,
 };

@@ -249,7 +249,7 @@ impl Deserializer {
     /// from the underlying buffer so far. Can be fed back to
     /// [`Self::set_position`] to rewind (e.g. for speculative parsing).
     #[inline]
-    pub fn position(&self) -> usize {
+    pub const fn position(&self) -> usize {
         self.offset
     }
 
@@ -273,7 +273,7 @@ impl Deserializer {
     }
 
     #[inline]
-    fn remaining(&self) -> usize {
+    const fn remaining(&self) -> usize {
         self.data.len() - self.offset
     }
 
@@ -1003,6 +1003,7 @@ deserialize_array!(
 #[allow(clippy::bool_assert_comparison)]
 mod test {
     use super::*;
+    use core::assert_matches;
 
     #[test]
     fn negative_integer() {
@@ -1021,7 +1022,7 @@ mod test {
         // avoid a `-(v as i64) - 1` kind of mistake
         let input = vec![0x3b, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let mut raw = Deserializer::from(input);
-        assert!(matches!(raw.negative_integer(), Err(Error::ExpectedI64)));
+        assert_matches!(raw.negative_integer(), Err(Error::ExpectedI64));
         // the header was not consumed, so the i128-returning variant can
         // still read the full nint range from the same deserializer
         assert_eq!(
@@ -1093,8 +1094,9 @@ mod test {
                 3 => raw.text().map(|_| ()),
                 _ => unreachable!(),
             };
-            assert!(
-                matches!(result, Err(Error::NotEnough(_, _))),
+            assert_matches!(
+                result,
+                Err(Error::NotEnough(_, _)),
                 "input {:x?}: expected NotEnough, got {:?}",
                 input,
                 result
@@ -1105,7 +1107,7 @@ mod test {
     #[test]
     fn advance_past_end_errors() {
         let mut raw = Deserializer::from(vec![0x00]);
-        assert!(matches!(raw.advance(2), Err(Error::NotEnough(1, 2))));
+        assert_matches!(raw.advance(2), Err(Error::NotEnough(1, 2)));
     }
 
     #[test]
@@ -1117,7 +1119,7 @@ mod test {
         // the fully-consumed state (== buffer len) is a valid position
         raw.set_position(3).unwrap();
         assert!(raw.as_slice().is_empty());
-        assert!(matches!(raw.set_position(4), Err(Error::NotEnough(3, 4))));
+        assert_matches!(raw.set_position(4), Err(Error::NotEnough(3, 4)));
         // a failed set_position leaves the position untouched
         assert_eq!(raw.position(), 3);
         // set_position(position()) is a no-op
@@ -1157,7 +1159,7 @@ mod test {
         // remaining-relative: 2 left after the header byte... 5 needed)
         let mut raw = Deserializer::from(vec![0x41, 0xAA, 0x45, 0x01, 0x02]);
         assert_eq!(raw.bytes().unwrap(), vec![0xAA]);
-        assert!(matches!(raw.bytes(), Err(Error::NotEnough(2, 5))));
+        assert_matches!(raw.bytes(), Err(Error::NotEnough(2, 5)));
     }
 
     #[test]
@@ -1172,10 +1174,7 @@ mod test {
         let mut raw = Deserializer::from(vec![0x01]);
         assert_eq!(raw.deserialize_complete::<u8>().unwrap(), 1);
         let mut raw = Deserializer::from(vec![0x01, 0x02]);
-        assert!(matches!(
-            raw.deserialize_complete::<u8>(),
-            Err(Error::TrailingData)
-        ));
+        assert_matches!(raw.deserialize_complete::<u8>(), Err(Error::TrailingData));
     }
 
     // manual smoke test for the O(1) advance contract: under the old
@@ -1208,31 +1207,19 @@ mod test {
     #[test]
     fn truncated_value_headers_report_needed_bytes() {
         let mut empty = Deserializer::from(vec![]);
-        assert!(matches!(empty.cbor_type(), Err(Error::NotEnough(0, 1))));
+        assert_matches!(empty.cbor_type(), Err(Error::NotEnough(0, 1)));
 
         let mut u8_len = Deserializer::from(vec![0x18]);
-        assert!(matches!(
-            u8_len.unsigned_integer(),
-            Err(Error::NotEnough(1, 2))
-        ));
+        assert_matches!(u8_len.unsigned_integer(), Err(Error::NotEnough(1, 2)));
 
         let mut u16_len = Deserializer::from(vec![0x19, 0x01]);
-        assert!(matches!(
-            u16_len.unsigned_integer(),
-            Err(Error::NotEnough(2, 3))
-        ));
+        assert_matches!(u16_len.unsigned_integer(), Err(Error::NotEnough(2, 3)));
 
         let mut u32_len = Deserializer::from(vec![0x1a, 0x01, 0x02, 0x03]);
-        assert!(matches!(
-            u32_len.unsigned_integer(),
-            Err(Error::NotEnough(4, 5))
-        ));
+        assert_matches!(u32_len.unsigned_integer(), Err(Error::NotEnough(4, 5)));
 
         let mut u64_len = Deserializer::from(vec![0x1b, 0x01, 0x02, 0x03, 0x04]);
-        assert!(matches!(
-            u64_len.unsigned_integer(),
-            Err(Error::NotEnough(5, 9))
-        ));
+        assert_matches!(u64_len.unsigned_integer(), Err(Error::NotEnough(5, 9)));
     }
 
     #[test]
@@ -1270,16 +1257,16 @@ mod test {
     fn text_invalid_utf8() {
         // definite: text of length 2 with invalid UTF-8 payload
         let mut raw = Deserializer::from(vec![0x62, 0xff, 0xfe]);
-        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+        assert_matches!(raw.text(), Err(Error::InvalidTextError(_)));
 
         // indefinite: valid chunk "a" followed by an invalid-UTF-8 chunk
         let mut raw = Deserializer::from(vec![0x7f, 0x61, 0x61, 0x62, 0xff, 0xfe, 0xff]);
-        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+        assert_matches!(raw.text(), Err(Error::InvalidTextError(_)));
 
         // indefinite: 'é' (0xc3 0xa9) split across two chunks — RFC 8949 §3.2.3
         // requires every chunk to be valid UTF-8 on its own
         let mut raw = Deserializer::from(vec![0x7f, 0x61, 0xc3, 0x61, 0xa9, 0xff]);
-        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+        assert_matches!(raw.text(), Err(Error::InvalidTextError(_)));
     }
     #[test]
     fn text_empty() {
