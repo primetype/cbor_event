@@ -1,4 +1,4 @@
-use Error;
+use crate::Error;
 
 /// `Result` type for CBOR serialisation and deserialisation.
 pub type Result<T> = core::result::Result<T, Error>;

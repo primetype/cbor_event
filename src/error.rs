@@ -2,8 +2,8 @@ use alloc::string::{FromUtf8Error, String};
 use alloc::vec::Vec;
 use core::fmt;
 
-use len;
-use types::Type;
+use crate::len;
+use crate::types::Type;
 
 /// all expected error for cbor parsing and serialising
 #[derive(Debug)]
@@ -22,11 +22,11 @@ pub enum Error {
     /// Exception: `Deserializer::set_position` measures both from the buffer
     /// start instead: `(buffer_len, requested_position)`.
     NotEnough(usize, usize),
-    /// Were expecting a different [`Type`](../enum.Type.html). The first
+    /// Were expecting a different [`Type`]. The first
     /// element is the expected type, the second is the current type.
     Expected(Type, Type),
     ExpectedSetTag,
-    /// this may happens when deserialising a [`Deserializer`](../de/struct.Deserializer.html);
+    /// this may happens when deserialising a [`Deserializer`](crate::de::Deserializer);
     UnknownLenType(u8),
     IndefiniteLenNotSupported(Type),
     WrongLen(u64, len::Len, &'static str),
@@ -58,7 +58,7 @@ impl From<FromUtf8Error> for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Error::*;
+        use crate::Error::*;
         match self {
             ExpectedU8 => write!(f, "Invalid cbor: expected 8bit long unsigned integer"),
             ExpectedU16 => write!(f, "Invalid cbor: expected 16bit long unsigned integer"),

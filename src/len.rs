@@ -7,19 +7,19 @@ pub enum Len {
     Len(u64),
 }
 impl Len {
-    pub fn is_null(&self) -> bool {
+    #[must_use]
+    pub const fn is_null(&self) -> bool {
         matches!(self, Self::Len(0))
     }
-    pub fn non_null(self) -> Option<Self> {
-        if self.is_null() {
-            None
-        } else {
-            Some(self)
-        }
+
+    #[must_use]
+    pub const fn non_null(self) -> Option<Self> {
+        if self.is_null() { None } else { Some(self) }
     }
 
-    pub fn indefinite(&self) -> bool {
-        self == &Len::Indefinite
+    #[must_use]
+    pub const fn indefinite(&self) -> bool {
+        matches!(self, Self::Indefinite)
     }
 }
 
@@ -39,21 +39,23 @@ pub enum Sz {
 }
 
 impl Sz {
-    pub fn canonical(len: u64) -> Self {
+    #[must_use]
+    pub const fn canonical(len: u64) -> Self {
         if len <= super::MAX_INLINE_ENCODING {
-            Sz::Inline
+            Self::Inline
         } else if len < 0x1_00 {
-            Sz::One
+            Self::One
         } else if len < 0x1_00_00 {
-            Sz::Two
+            Self::Two
         } else if len < 0x1_00_00_00_00 {
-            Sz::Four
+            Self::Four
         } else {
-            Sz::Eight
+            Self::Eight
         }
     }
 
-    pub fn bytes_following(&self) -> usize {
+    #[must_use]
+    pub const fn bytes_following(&self) -> usize {
         match self {
             Self::Inline => 0,
             Self::One => 1,
@@ -75,7 +77,8 @@ pub enum LenSz {
 }
 
 impl LenSz {
-    pub fn bytes_following(&self) -> usize {
+    #[must_use]
+    pub const fn bytes_following(&self) -> usize {
         match self {
             Self::Indefinite => 0,
             Self::Len(_, sz) => sz.bytes_following(),

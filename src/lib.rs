@@ -1,11 +1,11 @@
 //! # CBOR event library
 //!
-//! [`Deserializer`]: ./de/struct.Deserializer.html
-//! [`Deserialize`]: ./de/trait.Deserialize.html
-//! [`Serializer`]: ./se/struct.Serializer.html
-//! [`Serialize`]: ./se/trait.Serialize.html
-//! [`Error`]: ./enum.Error.html
-//! [`Type`]: ./enum.Type.html
+//! [`Deserializer`]: crate::de::Deserializer
+//! [`Deserialize`]: crate::de::Deserialize
+//! [`Serializer`]: crate::se::Serializer
+//! [`Serialize`]: crate::se::Serialize
+//! [`Error`]: crate::Error
+//! [`Type`]: crate::Type
 //!
 //! `cbor_event` is a minimalist CBOR implementation of the CBOR binary
 //! serialisation format. It provides a simple yet efficient way to parse
@@ -24,8 +24,7 @@
 //!
 //! Deserialisation works by consuming a `Deserializer` content. To avoid
 //! performance issues some objects use a reference to the original
-//! source [`Deserializer`] internal buffer. They are then linked to the object
-//! by an associated lifetime, this is true for `Bytes`.
+//! source [`Deserializer`] internal buffer.
 //!
 //! ```
 //! use cbor_event::de::*;
@@ -72,13 +71,13 @@ pub mod se;
 mod types;
 mod value;
 
-pub use de::Deserialize;
-pub use error::Error;
-pub use len::*;
-pub use result::Result;
-pub use se::Serialize;
-pub use types::*;
-pub use value::Value;
+pub use crate::de::Deserialize;
+pub use crate::error::Error;
+pub use crate::len::*;
+pub use crate::result::Result;
+pub use crate::se::Serialize;
+pub use crate::types::*;
+pub use crate::value::Value;
 
 const MAX_INLINE_ENCODING: u64 = 23;
 
@@ -88,8 +87,7 @@ const CBOR_PAYLOAD_LENGTH_U32: u8 = 26;
 const CBOR_PAYLOAD_LENGTH_U64: u8 = 27;
 
 /// exported as a convenient function to test the implementation of
-/// [`Serialize`](./se/trait.Serialize.html) and
-/// [`Deserialize`](./de/trait.Deserialize.html).
+/// [`Serialize`] and [`Deserialize`].
 ///
 pub fn test_encode_decode<V: Sized + PartialEq + Serialize + Deserialize>(v: &V) -> Result<bool> {
     let mut se = se::Serializer::new_vec();

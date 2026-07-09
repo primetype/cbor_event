@@ -1,14 +1,14 @@
 //! CBOR deserialisation tooling
 
+use crate::error::Error;
+use crate::len::{Len, LenSz, StringLenSz, Sz};
+use crate::result::Result;
+use crate::types::{Special, Type};
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::fmt::{Display, Formatter};
-use error::Error;
-use len::{Len, LenSz, StringLenSz, Sz};
-use result::Result;
-use types::{Special, Type};
 
 /// Decode an IEEE 754 binary16 (half-precision) bit pattern to f64,
 /// per RFC 8949 §3.3 / Appendix D.
@@ -19,7 +19,7 @@ use types::{Special, Type};
 /// Once stable, replace this code with https://github.com/primetype/cbor_event/pull/18
 fn f16_bits_to_f64(bits: u16) -> f64 {
     let exp = (bits >> 10) & 0x1f;
-    let mant = (bits & 0x3ff) as f64;
+    let mant = f64::from(bits & 0x3ff);
     let mag = match exp {
         // subnormal or ±0: mant * 2^-24
         0 => mant * (1.0 / 16_777_216.0),
@@ -34,11 +34,7 @@ fn f16_bits_to_f64(bits: u16) -> f64 {
         // since f64::powi/exp2 are std-only and this crate is no_std
         _ => (1024.0 + mant) * f64::from_bits(u64::from(exp + 1023 - 25) << 52),
     };
-    if bits & 0x8000 != 0 {
-        -mag
-    } else {
-        mag
-    }
+    if bits & 0x8000 != 0 { -mag } else { mag }
 }
 
 pub trait Deserialize: Sized {
@@ -50,33 +46,21 @@ pub trait Deserialize: Sized {
 impl Deserialize for u8 {
     fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let n = raw.unsigned_integer()?;
-        if n > u8::MAX as u64 {
-            Err(Error::ExpectedU8)
-        } else {
-            Ok(n as Self)
-        }
+        Self::try_from(n).map_err(|_| Error::ExpectedU8)
     }
 }
 
 impl Deserialize for u16 {
     fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let n = raw.unsigned_integer()?;
-        if n > u16::MAX as u64 {
-            Err(Error::ExpectedU16)
-        } else {
-            Ok(n as Self)
-        }
+        Self::try_from(n).map_err(|_| Error::ExpectedU16)
     }
 }
 
 impl Deserialize for u32 {
     fn deserialize(raw: &mut Deserializer) -> Result<Self> {
         let n = raw.unsigned_integer()?;
-        if n > u32::MAX as u64 {
-            Err(Error::ExpectedU32)
-        } else {
-            Ok(n as Self)
-        }
+        Self::try_from(n).map_err(|_| Error::ExpectedU32)
     }
 }
 
@@ -94,6 +78,7 @@ impl Deserialize for bool {
 
 impl Deserialize for f32 {
     fn deserialize(raw: &mut Deserializer) -> Result<Self> {
+        #[allow(clippy::cast_possible_truncation)]
         raw.float().map(|f| f as f32)
     }
 }
@@ -146,13 +131,12 @@ impl<T: Deserialize> Deserialize for Option<T> {
     }
 }
 
-/// [`Deserialize`]: ./trait.Deserialize.html
-/// [`Error`]: ../enum.Error.html
-/// [`Type`]: ../enum.Type.html
-/// [`Bytes`]: ../struct.Bytes.html
+/// [`Deserialize`]: crate::de::Deserialize
+/// [`Error`]: crate::Error
+/// [`Type`]: crate::Type
 /// [`cbor_type`]: #method.cbor_type
 /// [`cbor_len`]: #method.cbor_len
-/// [`Len`]: ../enum.Len.html
+/// [`Len`]: crate::Len
 ///
 /// `Deserializer` represents a chunk of bytes believed to be cbor object.
 /// The validity of the cbor bytes is known only when trying
@@ -253,7 +237,8 @@ impl Deserializer {
     /// from the underlying buffer so far. Can be fed back to
     /// [`Self::set_position`] to rewind (e.g. for speculative parsing).
     #[inline]
-    pub fn position(&self) -> usize {
+    #[must_use]
+    pub const fn position(&self) -> usize {
         self.offset
     }
 
@@ -272,12 +257,14 @@ impl Deserializer {
 
     /// returns the remaining (not-yet-consumed) bytes without consuming them.
     #[inline]
+    #[must_use]
     pub fn as_slice(&self) -> &[u8] {
         &self.data[self.offset..]
     }
 
     #[inline]
-    fn remaining(&self) -> usize {
+    #[must_use]
+    const fn remaining(&self) -> usize {
         self.data.len() - self.offset
     }
 
@@ -297,36 +284,31 @@ impl Deserializer {
     fn u8(&mut self, index: usize) -> Result<u64> {
         self.ensure(index.saturating_add(1) as u64)?;
         let b = self.get(index)?;
-        Ok(b as u64)
+        Ok(u64::from(b))
     }
+
+    #[inline]
+    fn fixed_bytes<const N: usize>(&mut self, index: usize) -> Result<[u8; N]> {
+        self.ensure(index.saturating_add(N) as u64)?;
+        let start = self.offset + index;
+        let mut bytes = [0; N];
+        bytes.copy_from_slice(&self.data[start..start + N]);
+        Ok(bytes)
+    }
+
     #[inline]
     fn u16(&mut self, index: usize) -> Result<u64> {
-        self.ensure(index.saturating_add(2) as u64)?;
-        let b1 = self.u8(index)?;
-        let b2 = self.u8(index + 1)?;
-        Ok(b1 << 8 | b2)
+        Ok(u64::from(u16::from_be_bytes(self.fixed_bytes(index)?)))
     }
+
     #[inline]
     fn u32(&mut self, index: usize) -> Result<u64> {
-        self.ensure(index.saturating_add(4) as u64)?;
-        let b1 = self.u8(index)?;
-        let b2 = self.u8(index + 1)?;
-        let b3 = self.u8(index + 2)?;
-        let b4 = self.u8(index + 3)?;
-        Ok(b1 << 24 | b2 << 16 | b3 << 8 | b4)
+        Ok(u64::from(u32::from_be_bytes(self.fixed_bytes(index)?)))
     }
+
     #[inline]
     fn u64(&mut self, index: usize) -> Result<u64> {
-        self.ensure(index.saturating_add(8) as u64)?;
-        let b1 = self.u8(index)?;
-        let b2 = self.u8(index + 1)?;
-        let b3 = self.u8(index + 2)?;
-        let b4 = self.u8(index + 3)?;
-        let b5 = self.u8(index + 4)?;
-        let b6 = self.u8(index + 5)?;
-        let b7 = self.u8(index + 6)?;
-        let b8 = self.u8(index + 7)?;
-        Ok(b1 << 56 | b2 << 48 | b3 << 40 | b4 << 32 | b5 << 24 | b6 << 16 | b7 << 8 | b8)
+        Ok(u64::from_be_bytes(self.fixed_bytes(index)?))
     }
 
     /// function to extract the type of the given `Deserializer`.
@@ -361,8 +343,8 @@ impl Deserializer {
     /// function to extract the length parameter of
     /// the given cbor object. The returned tuple contains
     ///
-    /// [`Type`]: ../enum.Type.html
-    /// [`Len`]: ../enum.Len.html
+    /// [`Type`]: crate::Type
+    /// [`Len`]: crate::Len
     ///
     /// * the [`Len`];
     /// * the size of the encoded length (the number of bytes the data was encoded in).
@@ -393,7 +375,7 @@ impl Deserializer {
     pub fn cbor_len(&mut self) -> Result<(Len, usize)> {
         let b: u8 = self.get(0)? & 0b0001_1111;
         match b {
-            0x00..=0x17 => Ok((Len::Len(b as u64), 0)),
+            0x00..=0x17 => Ok((Len::Len(u64::from(b)), 0)),
             0x18 => self.u8(1).map(|v| (Len::Len(v), 1)),
             0x19 => self.u16(1).map(|v| (Len::Len(v), 2)),
             0x1a => self.u32(1).map(|v| (Len::Len(v), 4)),
@@ -410,12 +392,12 @@ impl Deserializer {
     /// function to extract the length parameter of
     /// the given cbor object as well as the encoding details of the length.
     ///
-    /// [`LenSz`]: ../enum.LenSz.html
+    /// [`LenSz`]: crate::LenSz
     #[inline]
     pub fn cbor_len_sz(&mut self) -> Result<LenSz> {
         let b: u8 = self.get(0)? & 0b0001_1111;
         match b {
-            0x00..=0x17 => Ok(LenSz::Len(b as u64, Sz::Inline)),
+            0x00..=0x17 => Ok(LenSz::Len(u64::from(b), Sz::Inline)),
             0x18 => self.u8(1).map(|v| LenSz::Len(v, Sz::One)),
             0x19 => self.u16(1).map(|v| LenSz::Len(v, Sz::Two)),
             0x1a => self.u32(1).map(|v| LenSz::Len(v, Sz::Four)),
@@ -440,11 +422,17 @@ impl Deserializer {
             // 32-bit targets where the claimed length exceeds usize::MAX
             Err(Error::NotEnough(
                 self.remaining(),
-                core::cmp::min(len, usize::MAX as u64) as usize,
+                usize::try_from(len).unwrap_or(usize::MAX),
             ))
         } else {
             Ok(())
         }
+    }
+
+    #[inline]
+    fn ensure_usize(&self, len: u64) -> Result<usize> {
+        self.ensure(len)?;
+        Ok(usize::try_from(len).expect("length was validated against remaining bytes"))
     }
 
     /// consume the given `len` from the underlying buffer. This is `O(1)` and
@@ -552,7 +540,7 @@ impl Deserializer {
                     return Err(Error::ExpectedI64);
                 }
                 self.advance(1 + len_sz)?;
-                Ok(-(v as i64) - 1)
+                Ok(-i64::try_from(v).expect("nint argument was checked to fit i64") - 1)
             }
         }
     }
@@ -569,7 +557,7 @@ impl Deserializer {
             LenSz::Indefinite => Err(Error::IndefiniteLenNotSupported(Type::NegativeInteger)),
             LenSz::Len(v, sz) => {
                 self.advance(1 + sz.bytes_following())?;
-                Ok((-(v as i128) - 1, sz))
+                Ok((-i128::from(v) - 1, sz))
             }
         }
     }
@@ -610,9 +598,9 @@ impl Deserializer {
                         LenSz::Indefinite => return Err(Error::InvalidIndefiniteString),
                         LenSz::Len(len, sz) => {
                             self.advance(1 + sz.bytes_following())?;
-                            self.ensure(len)?;
-                            bytes.extend_from_slice(&self.as_slice()[0..len as usize]);
-                            self.advance(len as usize)?;
+                            let chunk_len = self.ensure_usize(len)?;
+                            bytes.extend_from_slice(&self.as_slice()[0..chunk_len]);
+                            self.advance(chunk_len)?;
                             chunk_lens.push((len, sz));
                         }
                     }
@@ -620,10 +608,10 @@ impl Deserializer {
                 Ok((bytes, StringLenSz::Indefinite(chunk_lens)))
             }
             LenSz::Len(len, sz) => {
-                self.ensure(len)?;
-                let bytes = &self.as_slice()[0..len as usize];
+                let len = self.ensure_usize(len)?;
+                let bytes = &self.as_slice()[0..len];
                 let bytes_vec = Vec::from(bytes);
-                self.advance(len as usize)?;
+                self.advance(len)?;
                 Ok((bytes_vec, StringLenSz::Len(sz)))
             }
         }
@@ -669,10 +657,10 @@ impl Deserializer {
                             // RFC 8949 §3.2.3 forbids splitting UTF-8 characters across chunks so
                             // we must read each chunk separately as a definite encoded UTF-8 string
                             self.advance(1 + sz.bytes_following())?;
-                            self.ensure(len)?;
-                            let bytes = &self.as_slice()[0..len as usize];
+                            let chunk_len = self.ensure_usize(len)?;
+                            let bytes = &self.as_slice()[0..chunk_len];
                             let chunk_text = String::from_utf8(bytes.to_vec())?;
-                            self.advance(len as usize)?;
+                            self.advance(chunk_len)?;
                             text.push_str(&chunk_text);
                             chunk_lens.push((len, sz));
                         }
@@ -681,10 +669,10 @@ impl Deserializer {
                 Ok((text, StringLenSz::Indefinite(chunk_lens)))
             }
             LenSz::Len(len, sz) => {
-                self.ensure(len)?;
-                let bytes = &self.as_slice()[0..len as usize];
+                let len = self.ensure_usize(len)?;
+                let bytes = &self.as_slice()[0..len];
                 let text = String::from_utf8(bytes.to_vec())?;
-                self.advance(len as usize)?;
+                self.advance(len)?;
                 Ok((text, StringLenSz::Len(sz)))
             }
         }
@@ -902,24 +890,24 @@ impl Deserializer {
                 Ok(Special::Undefined)
             }
             0x18 => {
-                let b = self.u8(1)?;
+                let b = self.get(1)?;
                 // two-byte form is only well-formed for values >= 32
                 // (RFC 8949 Appendix C: `if (ib == 0xf8 && val < 0x20) fail`)
                 if b < 0x20 {
-                    return Err(Error::InvalidSimpleValue(b as u8));
+                    return Err(Error::InvalidSimpleValue(b));
                 }
                 self.advance(2)?;
-                Ok(Special::Unassigned(b as u8))
+                Ok(Special::Unassigned(b))
             }
             0x19 => {
-                let f = self.u16(1)? as u16;
+                let f = u16::try_from(self.u16(1)?).expect("u16 reader returns u16-sized values");
                 self.advance(3)?;
                 Ok(Special::Float(f16_bits_to_f64(f)))
             }
             0x1a => {
-                let f = self.u32(1)? as u32;
+                let f = u32::try_from(self.u32(1)?).expect("u32 reader returns u32-sized values");
                 self.advance(5)?;
-                Ok(Special::Float(f32::from_bits(f) as f64))
+                Ok(Special::Float(f64::from(f32::from_bits(f))))
             }
             0x1b => {
                 let f = self.u64(1)?;
@@ -1004,9 +992,9 @@ deserialize_array!(
 );
 
 #[cfg(test)]
-#[allow(clippy::bool_assert_comparison)]
 mod test {
     use super::*;
+    use core::assert_matches;
 
     #[test]
     fn negative_integer() {
@@ -1025,7 +1013,7 @@ mod test {
         // avoid a `-(v as i64) - 1` kind of mistake
         let input = vec![0x3b, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let mut raw = Deserializer::from(input);
-        assert!(matches!(raw.negative_integer(), Err(Error::ExpectedI64)));
+        assert_matches!(raw.negative_integer(), Err(Error::ExpectedI64));
         // the header was not consumed, so the i128-returning variant can
         // still read the full nint range from the same deserializer
         assert_eq!(
@@ -1097,8 +1085,9 @@ mod test {
                 3 => raw.text().map(|_| ()),
                 _ => unreachable!(),
             };
-            assert!(
-                matches!(result, Err(Error::NotEnough(_, _))),
+            assert_matches!(
+                result,
+                Err(Error::NotEnough(_, _)),
                 "input {:x?}: expected NotEnough, got {:?}",
                 input,
                 result
@@ -1109,7 +1098,7 @@ mod test {
     #[test]
     fn advance_past_end_errors() {
         let mut raw = Deserializer::from(vec![0x00]);
-        assert!(matches!(raw.advance(2), Err(Error::NotEnough(1, 2))));
+        assert_matches!(raw.advance(2), Err(Error::NotEnough(1, 2)));
     }
 
     #[test]
@@ -1121,7 +1110,7 @@ mod test {
         // the fully-consumed state (== buffer len) is a valid position
         raw.set_position(3).unwrap();
         assert!(raw.as_slice().is_empty());
-        assert!(matches!(raw.set_position(4), Err(Error::NotEnough(3, 4))));
+        assert_matches!(raw.set_position(4), Err(Error::NotEnough(3, 4)));
         // a failed set_position leaves the position untouched
         assert_eq!(raw.position(), 3);
         // set_position(position()) is a no-op
@@ -1154,6 +1143,17 @@ mod test {
     }
 
     #[test]
+    fn multibyte_integer_reads_after_partial_consumption() {
+        // fixed-width integer readers must slice from the current offset,
+        // not from the start of the original buffer.
+        let mut raw =
+            Deserializer::from(vec![0x00, 0x19, 0x12, 0x34, 0x1a, 0x12, 0x34, 0x56, 0x78]);
+        assert_eq!(raw.unsigned_integer().unwrap(), 0);
+        assert_eq!(raw.unsigned_integer().unwrap(), 0x1234);
+        assert_eq!(raw.unsigned_integer().unwrap(), 0x1234_5678);
+    }
+
+    #[test]
     fn ensure_is_offset_aware() {
         // after consuming 2 of 5 bytes, the next item claims 5 bytes: more
         // than the remaining 2 but not more than the total buffer, which an
@@ -1161,7 +1161,7 @@ mod test {
         // remaining-relative: 2 left after the header byte... 5 needed)
         let mut raw = Deserializer::from(vec![0x41, 0xAA, 0x45, 0x01, 0x02]);
         assert_eq!(raw.bytes().unwrap(), vec![0xAA]);
-        assert!(matches!(raw.bytes(), Err(Error::NotEnough(2, 5))));
+        assert_matches!(raw.bytes(), Err(Error::NotEnough(2, 5)));
     }
 
     #[test]
@@ -1176,10 +1176,7 @@ mod test {
         let mut raw = Deserializer::from(vec![0x01]);
         assert_eq!(raw.deserialize_complete::<u8>().unwrap(), 1);
         let mut raw = Deserializer::from(vec![0x01, 0x02]);
-        assert!(matches!(
-            raw.deserialize_complete::<u8>(),
-            Err(Error::TrailingData)
-        ));
+        assert_matches!(raw.deserialize_complete::<u8>(), Err(Error::TrailingData));
     }
 
     // manual smoke test for the O(1) advance contract: under the old
@@ -1189,7 +1186,7 @@ mod test {
     #[test]
     #[ignore]
     fn advance_is_constant_time_smoke() {
-        use se::Serializer;
+        use crate::se::Serializer;
         const N: u64 = 10_000_000;
         let mut se = Serializer::new_vec();
         for i in 0..N {
@@ -1212,31 +1209,19 @@ mod test {
     #[test]
     fn truncated_value_headers_report_needed_bytes() {
         let mut empty = Deserializer::from(vec![]);
-        assert!(matches!(empty.cbor_type(), Err(Error::NotEnough(0, 1))));
+        assert_matches!(empty.cbor_type(), Err(Error::NotEnough(0, 1)));
 
         let mut u8_len = Deserializer::from(vec![0x18]);
-        assert!(matches!(
-            u8_len.unsigned_integer(),
-            Err(Error::NotEnough(1, 2))
-        ));
+        assert_matches!(u8_len.unsigned_integer(), Err(Error::NotEnough(1, 2)));
 
         let mut u16_len = Deserializer::from(vec![0x19, 0x01]);
-        assert!(matches!(
-            u16_len.unsigned_integer(),
-            Err(Error::NotEnough(2, 3))
-        ));
+        assert_matches!(u16_len.unsigned_integer(), Err(Error::NotEnough(2, 3)));
 
         let mut u32_len = Deserializer::from(vec![0x1a, 0x01, 0x02, 0x03]);
-        assert!(matches!(
-            u32_len.unsigned_integer(),
-            Err(Error::NotEnough(4, 5))
-        ));
+        assert_matches!(u32_len.unsigned_integer(), Err(Error::NotEnough(4, 5)));
 
         let mut u64_len = Deserializer::from(vec![0x1b, 0x01, 0x02, 0x03, 0x04]);
-        assert!(matches!(
-            u64_len.unsigned_integer(),
-            Err(Error::NotEnough(5, 9))
-        ));
+        assert_matches!(u64_len.unsigned_integer(), Err(Error::NotEnough(5, 9)));
     }
 
     #[test]
@@ -1274,16 +1259,16 @@ mod test {
     fn text_invalid_utf8() {
         // definite: text of length 2 with invalid UTF-8 payload
         let mut raw = Deserializer::from(vec![0x62, 0xff, 0xfe]);
-        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+        assert_matches!(raw.text(), Err(Error::InvalidTextError(_)));
 
         // indefinite: valid chunk "a" followed by an invalid-UTF-8 chunk
         let mut raw = Deserializer::from(vec![0x7f, 0x61, 0x61, 0x62, 0xff, 0xfe, 0xff]);
-        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+        assert_matches!(raw.text(), Err(Error::InvalidTextError(_)));
 
         // indefinite: 'é' (0xc3 0xa9) split across two chunks — RFC 8949 §3.2.3
         // requires every chunk to be valid UTF-8 on its own
         let mut raw = Deserializer::from(vec![0x7f, 0x61, 0xc3, 0x61, 0xa9, 0xff]);
-        assert!(matches!(raw.text(), Err(Error::InvalidTextError(_))));
+        assert_matches!(raw.text(), Err(Error::InvalidTextError(_)));
     }
     #[test]
     fn text_empty() {
@@ -1497,8 +1482,8 @@ mod test {
         let mut raw = Deserializer::from(vec);
         let boolmap = BTreeMap::<bool, bool>::deserialize(&mut raw).unwrap();
         assert_eq!(boolmap.len(), 2);
-        assert_eq!(boolmap[&false], true);
-        assert_eq!(boolmap[&true], false);
+        assert!(boolmap[&false]);
+        assert!(!boolmap[&true]);
     }
     #[test]
     fn btreemap_bool_indefinite() {
@@ -1506,8 +1491,8 @@ mod test {
         let mut raw = Deserializer::from(vec);
         let boolmap = BTreeMap::<bool, bool>::deserialize(&mut raw).unwrap();
         assert_eq!(boolmap.len(), 2);
-        assert_eq!(boolmap[&false], true);
-        assert_eq!(boolmap[&true], false);
+        assert!(boolmap[&false]);
+        assert!(!boolmap[&true]);
     }
 
     #[test]
@@ -1541,7 +1526,7 @@ mod test {
         let _ = raw.bytes().unwrap();
 
         let crc = raw.unsigned_integer().unwrap();
-        assert_eq!(crc as u32, 0x71AD5836);
+        assert_eq!(u32::try_from(crc).unwrap(), 0x71AD5836);
     }
 
     #[test]

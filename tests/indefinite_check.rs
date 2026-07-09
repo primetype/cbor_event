@@ -23,7 +23,6 @@
 //! indefinite-length containers (RFC 8949 section 8.1); any vector can be
 //! re-checked by pasting the hex into https://cbor.me.
 
-extern crate cbor_event;
 use cbor_event::de::Deserializer;
 use cbor_event::{SpecialValue, Value};
 use std::collections::BTreeMap;
@@ -66,8 +65,10 @@ fn value_indefinite_map_rfc_vector() {
         (text_key("Amt"), Value::I64(-2)),
     ];
     assert_eq!(
-        de_value(&[0xbf, 0x63, 0x46, 0x75, 0x6e, 0xf5, 0x63, 0x41, 0x6d, 0x74, 0x21, 0xff])
-            .unwrap(),
+        de_value(&[
+            0xbf, 0x63, 0x46, 0x75, 0x6e, 0xf5, 0x63, 0x41, 0x6d, 0x74, 0x21, 0xff
+        ])
+        .unwrap(),
         Value::IObject(expected)
     );
 }
@@ -98,7 +99,10 @@ fn value_indefinite_map_nested_rfc_vector() {
         ),
     ];
     assert_eq!(
-        de_value(&[0xbf, 0x61, 0x61, 0x01, 0x61, 0x62, 0x9f, 0x02, 0x03, 0xff, 0xff]).unwrap(),
+        de_value(&[
+            0xbf, 0x61, 0x61, 0x01, 0x61, 0x62, 0x9f, 0x02, 0x03, 0xff, 0xff
+        ])
+        .unwrap(),
         Value::IObject(expected)
     );
 }

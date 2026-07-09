@@ -40,7 +40,7 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.81.0  # MSRV
+          - 1.96.1  # MSRV
 
     steps:
       - uses: actions/checkout@v2

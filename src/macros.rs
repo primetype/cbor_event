@@ -2,17 +2,14 @@
 /// cbor binary.
 ///
 /// This performs an in memory serialisation and returns the
-/// buffer wrapped in a [`Result`](../enum.Result.html).
+/// buffer wrapped in a [`Result`](crate::Result).
 ///
 /// ```
-/// #[macro_use]
-/// extern crate cbor_event;
+/// use cbor_event::cbor;
 ///
-/// # fn main() {
 /// let value = 0u64;
 /// let bytes = cbor!(value).unwrap();
 /// # assert_eq!(bytes, vec![0])
-/// # }
 /// ```
 #[macro_export]
 macro_rules! cbor {
