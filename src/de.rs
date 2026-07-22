@@ -1470,6 +1470,30 @@ mod test {
         }
     }
 
+    // same byte-level guarantee for f32, over all 2^32 encodings. Ignored
+    // by default (and out of CI): ~3min in release, ~18min in debug, and it
+    // only needs re-running when the f32 narrowing/widening path changes.
+    // Run once with: cargo test --release float32_exhaustive -- --ignored
+    #[test]
+    #[ignore]
+    fn float32_exhaustive_byte_roundtrip() {
+        for bits in 0..=u32::MAX {
+            let bytes = vec![
+                0xfa,
+                (bits >> 24) as u8,
+                (bits >> 16) as u8,
+                (bits >> 8) as u8,
+                bits as u8,
+            ];
+            let mut raw = Deserializer::from(bytes.clone());
+            let (f, sz) = raw.float_sz().unwrap();
+            assert_eq!(sz, Sz::Four, "bits: {:#010x}", bits);
+            let mut se = crate::se::Serializer::new_vec();
+            se.write_float_sz(f, sz).unwrap();
+            assert_eq!(se.finalize(), bytes, "bits: {:#010x}", bits);
+        }
+    }
+
     // every float test vector from RFC 8949 Appendix A: decodes to the
     // listed diagnostic value and re-encodes byte-exactly at its width
     #[test]
