@@ -63,6 +63,26 @@ fn f64_to_f32_bits_exact(value: f64) -> Option<u32> {
     (f64::from(narrowed).to_bits() == value.to_bits()).then(|| narrowed.to_bits())
 }
 
+/// Smallest CBOR float width that encodes `value` with no loss:
+/// every bit, NaN payloads included, survives
+/// `write_float_sz(value, smallest_float_sz(value))`.
+/// Pair the two for
+/// preferred serialization of floats (RFC 8949 §4.2.1).
+///
+/// Note: a NaN whose payload fits a smaller width shortens to *that
+/// payload*, not to the canonical half-width quiet NaN `0xf9 0x7e00`;
+/// strictly canonical writers must map NaN to their canonical pattern
+/// before calling.
+pub fn smallest_float_sz(value: f64) -> Sz {
+    if f64_to_f16_bits_exact(value).is_some() {
+        Sz::Two
+    } else if f64_to_f32_bits_exact(value).is_some() {
+        Sz::Four
+    } else {
+        Sz::Eight
+    }
+}
+
 pub trait Serialize {
     fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer>;
 }
@@ -1224,6 +1244,58 @@ mod test {
                 Some(b) => exact_per_half && b == h.to_bits(),
                 None => !exact_per_half,
             }
+        }
+    }
+
+    #[test]
+    fn smallest_float_sz_picks_tightest_lossless_width() {
+        let cases: &[(f64, Sz)] = &[
+            (0.0, Sz::Two),
+            (-0.0, Sz::Two),
+            (1.5, Sz::Two),
+            (65504.0, Sz::Two), // max finite f16
+            (f64::INFINITY, Sz::Two),
+            (f64::NAN, Sz::Two),
+            (65520.0, Sz::Four), // just above f16 range, f32-exact
+            (100000.0, Sz::Four),
+            (f64::from(f32::MAX), Sz::Four),
+            (f64::from(f32::from_bits(1)), Sz::Four), // min f32 subnormal
+            (1.1, Sz::Eight),
+            (1e300, Sz::Eight),
+            (f64::MIN_POSITIVE, Sz::Eight),
+        ];
+        for (v, expected) in cases {
+            assert_eq!(smallest_float_sz(*v), *expected, "value: {}", v);
+        }
+    }
+
+    quickcheck! {
+        // the chosen width is lossless (bit-exact through a byte round
+        // trip) and minimal (every smaller width fails)
+        fn property_smallest_float_sz(bits: crate::types::AnyBits, mode: u8) -> bool {
+            // random f64 bits are almost always Sz::Eight; derive some
+            // values from f32/f16 space so Two/Four get real coverage
+            let v = match mode % 3 {
+                0 => f64::from_bits(bits.0),
+                1 => f64::from(f32::from_bits(bits.0 as u32)),
+                _ => half::f16::from_bits(bits.0 as u16).to_f64(),
+            };
+            let sz = smallest_float_sz(v);
+            let mut se = Serializer::new_vec();
+            se.write_float_sz(v, sz).unwrap();
+            let mut raw = crate::de::Deserializer::from(se.finalize());
+            let (back, back_sz) = raw.float_sz().unwrap();
+            if back.to_bits() != v.to_bits() || back_sz != sz {
+                return false;
+            }
+            let smaller: &[Sz] = match sz {
+                Sz::Four => &[Sz::Two],
+                Sz::Eight => &[Sz::Two, Sz::Four],
+                _ => &[],
+            };
+            smaller
+                .iter()
+                .all(|s| Serializer::new_vec().write_float_sz(v, *s).is_err())
         }
     }
 
