@@ -5,6 +5,20 @@ use core::convert::TryFrom;
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
 
+/// full-range u64 bits for property tests: quickcheck 0.7's integer
+/// `Arbitrary` is bounded by the generator size (~100), which would leave
+/// float properties testing only tiny subnormal bit patterns
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AnyBits(pub u64);
+
+#[cfg(test)]
+impl Arbitrary for AnyBits {
+    fn arbitrary<G: Gen>(g: &mut G) -> Self {
+        AnyBits(g.next_u64())
+    }
+}
+
 /// CBOR Major Types
 ///
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -68,7 +82,8 @@ pub enum Special {
     Unassigned(u8),
 
     /// floats decode from any width (f16/f32/f64) but always serialize
-    /// as f64
+    /// as f64; for byte-exact width preservation use
+    /// `Deserializer::float_sz` / `Serializer::write_float_sz` instead
     Float(f64),
     /// mark the stop of a given indefinite-length item
     Break,
@@ -157,7 +172,8 @@ pub enum SpecialValue {
     Unassigned(u8),
 
     /// floats decode from any width (f16/f32/f64) but always serialize
-    /// as f64
+    /// as f64; for byte-exact width preservation use
+    /// `Deserializer::float_sz` / `Serializer::write_float_sz` instead
     Float(f64),
 }
 
@@ -197,6 +213,15 @@ fn arbitrary_unassigned<G: Gen>(g: &mut G) -> u8 {
     }
 }
 
+/// any f64 bit pattern (subnormals, infinities, ...) except NaN:
+/// NaN != NaN would fail the PartialEq-based round-trip property even
+/// though the bits round-trip fine (covered by `float_nan_roundtrip_bits`)
+#[cfg(test)]
+fn arbitrary_float<G: Gen>(g: &mut G) -> f64 {
+    let f = f64::from_bits(g.next_u64());
+    if f.is_nan() { f64::INFINITY } else { f }
+}
+
 #[cfg(test)]
 impl Arbitrary for SpecialValue {
     fn arbitrary<G: Gen>(g: &mut G) -> Self {
@@ -205,7 +230,7 @@ impl Arbitrary for SpecialValue {
             1 => SpecialValue::Null,
             2 => SpecialValue::Undefined,
             3 => SpecialValue::Unassigned(arbitrary_unassigned(g)),
-            4 => SpecialValue::Null, // TODO: Float...
+            4 => SpecialValue::Float(arbitrary_float(g)),
             _ => unreachable!(),
         }
     }
@@ -219,7 +244,7 @@ impl Arbitrary for Special {
             1 => Special::Null,
             2 => Special::Undefined,
             3 => Special::Unassigned(arbitrary_unassigned(g)),
-            4 => Special::Null, // TODO: Float...
+            4 => Special::Float(arbitrary_float(g)),
             5 => Special::Break,
             _ => unreachable!(),
         }

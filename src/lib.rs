@@ -6,6 +6,9 @@
 //! [`Serialize`]: crate::se::Serialize
 //! [`Error`]: crate::Error
 //! [`Type`]: crate::Type
+//! [`Special::Float`]: crate::Special::Float
+//! [`Deserializer::float_sz`]: crate::de::Deserializer::float_sz
+//! [`Serializer::write_float_sz`]: crate::se::Serializer::write_float_sz
 //!
 //! `cbor_event` is a minimalist CBOR implementation of the CBOR binary
 //! serialisation format. It provides a simple yet efficient way to parse
@@ -18,7 +21,9 @@
 //! - Array and Map (of finite and indefinite size);
 //! - Tag;
 //! - Specials (`bool`, `null`, floating points, ...). Floats decode from any
-//!   width (f16/f32/f64) but always serialize as f64.
+//!   width (f16/f32/f64); [`Special::Float`] serializes as f64, while the
+//!   width-preserving pair [`Deserializer::float_sz`]/[`Serializer::write_float_sz`]
+//!   round-trips any encoding byte-exactly (NaN payloads included).
 //!
 //! ## Raw deserialisation: [`Deserializer`]
 //!
