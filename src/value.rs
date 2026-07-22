@@ -270,7 +270,15 @@ mod test {
 
     #[test]
     fn float() {
-        for f in [0.0, -0.0, 1.1, f64::MIN, f64::MAX, f64::INFINITY, f64::MIN_POSITIVE] {
+        for f in [
+            0.0,
+            -0.0,
+            1.1,
+            f64::MIN,
+            f64::MAX,
+            f64::INFINITY,
+            f64::MIN_POSITIVE,
+        ] {
             assert!(test_encode_decode(&Value::Special(SpecialValue::Float(f))).unwrap());
         }
     }
@@ -279,7 +287,11 @@ mod test {
     // it; the bits (payload included) must still survive the round-trip
     #[test]
     fn float_nan_roundtrip_bits() {
-        for bits in [f64::NAN.to_bits(), 0x7ff8_dead_beef_cafe, 0xfff0_0000_0000_0001] {
+        for bits in [
+            f64::NAN.to_bits(),
+            0x7ff8_dead_beef_cafe,
+            0xfff0_0000_0000_0001,
+        ] {
             let mut se = Serializer::new_vec();
             Value::Special(SpecialValue::Float(f64::from_bits(bits)))
                 .serialize(&mut se)

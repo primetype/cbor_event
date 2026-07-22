@@ -1189,7 +1189,10 @@ mod test {
             float_sz_bytes(5.960464477539063e-8, Sz::Two).unwrap(),
             [0xf9, 0x00, 0x01]
         );
-        assert_eq!(float_sz_bytes(65504.0, Sz::Two).unwrap(), [0xf9, 0x7b, 0xff]);
+        assert_eq!(
+            float_sz_bytes(65504.0, Sz::Two).unwrap(),
+            [0xf9, 0x7b, 0xff]
+        );
         assert_eq!(float_sz_bytes(-0.0, Sz::Two).unwrap(), [0xf9, 0x80, 0x00]);
         assert_eq!(
             float_sz_bytes(f64::NEG_INFINITY, Sz::Two).unwrap(),
