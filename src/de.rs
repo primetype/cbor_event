@@ -27,7 +27,12 @@ fn f16_bits_to_f64(bits: u16) -> f64 {
             if mant == 0.0 {
                 f64::INFINITY
             } else {
-                f64::NAN
+                // NaN: left-align the payload into the f64 mantissa
+                // (IEEE 754 widening), in software: hardware NaN
+                // conversions may quiet signaling NaNs or drop payloads
+                // depending on the platform
+                let m = u64::from(bits & 0x3ff) << 42;
+                return f64::from_bits(u64::from(bits >> 15) << 63 | 0x7ff0_0000_0000_0000 | m);
             }
         }
         // normal: (1024 + mant) * 2^(exp - 25), built via from_bits
@@ -35,6 +40,18 @@ fn f16_bits_to_f64(bits: u16) -> f64 {
         _ => (1024.0 + mant) * f64::from_bits(u64::from(exp + 1023 - 25) << 52),
     };
     if bits & 0x8000 != 0 { -mag } else { mag }
+}
+
+/// Decode an IEEE 754 binary32 bit pattern to f64. Lossless: NaN payloads
+/// are widened in software (see the NaN arm of [`f16_bits_to_f64`])
+fn f32_bits_to_f64(bits: u32) -> f64 {
+    let f = f32::from_bits(bits);
+    if f.is_nan() {
+        let m = u64::from(bits & 0x007f_ffff) << 29;
+        f64::from_bits(u64::from(bits >> 31) << 63 | 0x7ff0_0000_0000_0000 | m)
+    } else {
+        f64::from(f)
+    }
 }
 
 pub trait Deserialize: Sized {
@@ -907,7 +924,7 @@ impl Deserializer {
             0x1a => {
                 let f = u32::try_from(self.u32(1)?).expect("u32 reader returns u32-sized values");
                 self.advance(5)?;
-                Ok(Special::Float(f64::from(f32::from_bits(f))))
+                Ok(Special::Float(f32_bits_to_f64(f)))
             }
             0x1b => {
                 let f = self.u64(1)?;
@@ -930,6 +947,34 @@ impl Deserializer {
 
     pub fn float(&mut self) -> Result<f64> {
         self.special()?.unwrap_float()
+    }
+
+    /// Read a float from the `Deserializer` with encoding information
+    ///
+    /// Same as `float` but also returns the encoded width: `Sz::Two`,
+    /// `Sz::Four` or `Sz::Eight` (the only float encodings, RFC 8949 §3.3).
+    /// Round-trips byte-exactly through [`Serializer::write_float_sz`],
+    /// NaN payloads included.
+    ///
+    /// [`Serializer::write_float_sz`]: crate::se::Serializer::write_float_sz
+    pub fn float_sz(&mut self) -> Result<(f64, Sz)> {
+        self.cbor_expect_type(Type::Special)?;
+        let sz = match self.get(0)? & 0b0001_1111 {
+            0x19 => Sz::Two,
+            0x1a => Sz::Four,
+            0x1b => Sz::Eight,
+            _ => {
+                // not a float: fail with float()'s error (consuming the
+                // special, matching float()'s behaviour)
+                self.special()?.unwrap_float()?;
+                unreachable!("only 0x19..=0x1b decode to Special::Float")
+            }
+        };
+        let f = self
+            .special()?
+            .unwrap_float()
+            .expect("float codepoints always decode to Special::Float");
+        Ok((f, sz))
     }
 
     pub fn deserialize<T>(&mut self) -> Result<T>
@@ -1319,15 +1364,204 @@ mod test {
         for bits in 0..=u16::MAX {
             let ours = super::f16_bits_to_f64(bits);
             let reference = half::f16::from_bits(bits).to_f64();
-            // bit-exact so ±0.0 are distinguished; NaN payloads are exempt
-            // (we canonicalize to f64::NAN, half preserves the payload)
+            // bit-exact, NaN payloads included — except that half quiets
+            // signaling NaNs (sets mantissa bit 51) while we preserve them
+            // verbatim so encodings round-trip byte-exactly
+            let quieted = ours.to_bits() | (u64::from(ours.is_nan()) << 51);
             assert!(
-                ours.to_bits() == reference.to_bits() || (ours.is_nan() && reference.is_nan()),
-                "bits {:#06x}: ours {} != half {}",
+                ours.to_bits() == reference.to_bits() || quieted == reference.to_bits(),
+                "bits {:#06x}: ours {} ({:#018x}) != half {} ({:#018x})",
                 bits,
                 ours,
-                reference
+                ours.to_bits(),
+                reference,
+                reference.to_bits()
             );
+        }
+    }
+
+    #[test]
+    fn float_sz() {
+        let cases: &[(&[u8], f64, Sz)] = &[
+            (&[0xf9, 0x3e, 0x00], 1.5, Sz::Two),
+            (&[0xfa, 0x3f, 0xc0, 0x00, 0x00], 1.5, Sz::Four),
+            (
+                &[0xfb, 0x3f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+                1.5,
+                Sz::Eight,
+            ),
+        ];
+        for (bytes, expected, expected_sz) in cases {
+            let mut raw = Deserializer::from(bytes.to_vec());
+            assert_eq!(raw.float_sz().unwrap(), (*expected, *expected_sz));
+        }
+        // non-float specials fail like float() does
+        let mut raw = Deserializer::from(vec![0xf5]);
+        assert!(raw.float_sz().is_err());
+    }
+
+    // error-path consumption contract, matching float():
+    // a non-float special is consumed before erroring, a wrong major
+    // type consumes nothing
+    #[test]
+    fn float_sz_error_consumption() {
+        let mut raw = Deserializer::from(vec![0xf5]);
+        assert!(raw.float_sz().is_err());
+        assert_eq!(raw.position(), 1);
+
+        let mut raw = Deserializer::from(vec![0x01]);
+        assert_matches!(
+            raw.float_sz(),
+            Err(Error::Expected(Type::Special, Type::UnsignedInteger))
+        );
+        assert_eq!(raw.position(), 0);
+
+        // reserved codepoints, two-byte simples and truncated floats error
+        for bytes in [
+            vec![0xfc],
+            vec![0xfd],
+            vec![0xfe],
+            vec![0xf8, 0x20],
+            vec![0xf9, 0x00],
+            vec![0xfa, 0x00, 0x00, 0x00],
+            vec![0xfb],
+        ] {
+            let mut raw = Deserializer::from(bytes.clone());
+            assert!(raw.float_sz().is_err(), "bytes: {:x?}", bytes);
+        }
+    }
+
+    // NaN payloads survive decoding at every width, deterministically:
+    // widening is done in software (hardware NaN conversions may quiet
+    // signaling NaNs or drop payloads depending on the platform)
+    #[test]
+    fn float_nan_payload_preserved() {
+        // f16 qNaN, payload 1: 10-bit mantissa 0x201 left-aligns by 42
+        let mut raw = Deserializer::from(vec![0xf9, 0x7e, 0x01]);
+        let expected = 0x7ff0_0000_0000_0000_u64 | 0x201 << 42;
+        assert_eq!(raw.float().unwrap().to_bits(), expected);
+        // f16 sNaN (quiet bit clear), payload 1, negative
+        let mut raw = Deserializer::from(vec![0xf9, 0xfc, 0x01]);
+        let expected = 0xfff0_0000_0000_0000_u64 | 1 << 42;
+        assert_eq!(raw.float().unwrap().to_bits(), expected);
+        // f32 qNaN, payload 1, negative: 23-bit mantissa left-aligns by 29
+        let mut raw = Deserializer::from(vec![0xfa, 0xff, 0xc0, 0x00, 0x01]);
+        let expected = 0xfff0_0000_0000_0000_u64 | 0x40_0001 << 29;
+        assert_eq!(raw.float().unwrap().to_bits(), expected);
+        // f32 sNaN, payload 1
+        let mut raw = Deserializer::from(vec![0xfa, 0x7f, 0x80, 0x00, 0x01]);
+        let expected = 0x7ff0_0000_0000_0000_u64 | 1 << 29;
+        assert_eq!(raw.float().unwrap().to_bits(), expected);
+    }
+
+    // the byte-level round-trip guarantee: any well-formed f16 encoding
+    // (NaN payloads, subnormals, ±0, infinities) decodes and re-encodes
+    // to the identical bytes
+    #[test]
+    fn float16_exhaustive_byte_roundtrip() {
+        for bits in 0..=u16::MAX {
+            let bytes = vec![0xf9, (bits >> 8) as u8, bits as u8];
+            let mut raw = Deserializer::from(bytes.clone());
+            let (f, sz) = raw.float_sz().unwrap();
+            assert_eq!(sz, Sz::Two, "bits: {:#06x}", bits);
+            let mut se = crate::se::Serializer::new_vec();
+            se.write_float_sz(f, sz).unwrap();
+            assert_eq!(se.finalize(), bytes, "bits: {:#06x}", bits);
+        }
+    }
+
+    // same byte-level guarantee for f32, over all 2^32 encodings. Ignored
+    // by default (and out of CI): ~3min in release, ~18min in debug, and it
+    // only needs re-running when the f32 narrowing/widening path changes.
+    // Run once with: cargo test --release float32_exhaustive -- --ignored
+    #[test]
+    #[ignore]
+    fn float32_exhaustive_byte_roundtrip() {
+        for bits in 0..=u32::MAX {
+            let bytes = vec![
+                0xfa,
+                (bits >> 24) as u8,
+                (bits >> 16) as u8,
+                (bits >> 8) as u8,
+                bits as u8,
+            ];
+            let mut raw = Deserializer::from(bytes.clone());
+            let (f, sz) = raw.float_sz().unwrap();
+            assert_eq!(sz, Sz::Four, "bits: {:#010x}", bits);
+            let mut se = crate::se::Serializer::new_vec();
+            se.write_float_sz(f, sz).unwrap();
+            assert_eq!(se.finalize(), bytes, "bits: {:#010x}", bits);
+        }
+    }
+
+    // every float test vector from RFC 8949 Appendix A: decodes to the
+    // listed diagnostic value and re-encodes byte-exactly at its width
+    #[test]
+    fn rfc8949_appendix_a_float_vectors() {
+        let nan = f64::from_bits(0x7ff8_0000_0000_0000);
+        let cases: &[(&[u8], f64)] = &[
+            (&[0xf9, 0x00, 0x00], 0.0),
+            (&[0xf9, 0x80, 0x00], -0.0),
+            (&[0xf9, 0x3c, 0x00], 1.0),
+            (&[0xfb, 0x3f, 0xf1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a], 1.1),
+            (&[0xf9, 0x3e, 0x00], 1.5),
+            (&[0xf9, 0x7b, 0xff], 65504.0),
+            (&[0xfa, 0x47, 0xc3, 0x50, 0x00], 100000.0),
+            (&[0xfa, 0x7f, 0x7f, 0xff, 0xff], 3.4028234663852886e+38),
+            (
+                &[0xfb, 0x7e, 0x37, 0xe4, 0x3c, 0x88, 0x00, 0x75, 0x9c],
+                1.0e+300,
+            ),
+            (&[0xf9, 0x00, 0x01], 5.960464477539063e-8),
+            (&[0xf9, 0x04, 0x00], 0.00006103515625),
+            (&[0xf9, 0xc4, 0x00], -4.0),
+            (
+                &[0xfb, 0xc0, 0x10, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66],
+                -4.1,
+            ),
+            (&[0xf9, 0x7c, 0x00], f64::INFINITY),
+            (&[0xf9, 0x7e, 0x00], nan),
+            (&[0xf9, 0xfc, 0x00], f64::NEG_INFINITY),
+            (&[0xfa, 0x7f, 0x80, 0x00, 0x00], f64::INFINITY),
+            (&[0xfa, 0x7f, 0xc0, 0x00, 0x00], nan),
+            (&[0xfa, 0xff, 0x80, 0x00, 0x00], f64::NEG_INFINITY),
+            (
+                &[0xfb, 0x7f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+                f64::INFINITY,
+            ),
+            (&[0xfb, 0x7f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], nan),
+            (
+                &[0xfb, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+                f64::NEG_INFINITY,
+            ),
+        ];
+        for (bytes, expected) in cases {
+            let mut raw = Deserializer::from(bytes.to_vec());
+            let (f, sz) = raw.float_sz().unwrap();
+            // bit compare: distinguishes -0.0 and pins the NaN pattern
+            assert_eq!(f.to_bits(), expected.to_bits(), "bytes: {:x?}", bytes);
+            let mut se = crate::se::Serializer::new_vec();
+            se.write_float_sz(f, sz).unwrap();
+            assert_eq!(&se.finalize(), bytes, "bytes: {:x?}", bytes);
+        }
+    }
+
+    quickcheck! {
+        // byte-level round-trip for f32/f64 encodings (f16 is covered
+        // exhaustively above)
+        fn property_float_bytes_roundtrip(bits: crate::types::AnyBits, wide: bool) -> bool {
+            let mut bytes = if wide {
+                vec![0xfb]
+            } else {
+                vec![0xfa]
+            };
+            let n = if wide { 8 } else { 4 };
+            bytes.extend_from_slice(&bits.0.to_be_bytes()[8 - n..]);
+            let mut raw = Deserializer::from(bytes.clone());
+            let (f, sz) = raw.float_sz().unwrap();
+            let mut se = crate::se::Serializer::new_vec();
+            se.write_float_sz(f, sz).unwrap();
+            se.finalize() == bytes
         }
     }
 

@@ -8,6 +8,81 @@ use crate::len::{Len, LenSz, StringLenSz, Sz};
 use crate::result::Result;
 use crate::types::{Special, Type};
 
+/// Exact f64 -> IEEE 754 binary16 narrowing: `Some` only when every bit of
+/// `value` survives, i.e. the result decodes back to the identical f64
+/// (sign, subnormals and NaN payloads included).
+///
+/// In software: rust's native f16 is not yet stable (rust-lang/rust#116909)
+/// and hardware NaN conversions are not fully specified across platforms
+fn f64_to_f16_bits_exact(value: f64) -> Option<u16> {
+    let bits = value.to_bits();
+    let sign = ((bits >> 63) as u16) << 15;
+    let exp = ((bits >> 52) & 0x7ff) as i32;
+    let mant = bits & 0x000f_ffff_ffff_ffff;
+    match exp {
+        0x7ff if mant == 0 => Some(sign | 0x7c00), // ±inf
+        // NaN: the payload must fit the 10-bit mantissa. `mant != 0` with
+        // the low 42 bits clear guarantees `mant >> 42 != 0`, so the
+        // result never aliases the infinity pattern
+        0x7ff => (mant & ((1 << 42) - 1) == 0).then_some(sign | 0x7c00 | (mant >> 42) as u16),
+        0 if mant == 0 => Some(sign), // ±0
+        // f64 subnormals are < 2^-1022, far below the f16 range
+        0 => None,
+        _ => {
+            let e = exp - 1023;
+            if (-14..=15).contains(&e) {
+                // normal f16: 10 explicit mantissa bits
+                (mant & ((1 << 42) - 1) == 0)
+                    .then(|| sign | ((e + 15) as u16) << 10 | (mant >> 42) as u16)
+            } else if (-24..=-15).contains(&e) {
+                // subnormal f16: value = m * 2^-24 for integer m in 1..=0x3ff
+                let full = 1 << 52 | mant; // implied leading one
+                let shift = 52 - (e + 24); // 43..=52
+                (full & ((1u64 << shift) - 1) == 0).then(|| sign | (full >> shift) as u16)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Exact f64 -> IEEE 754 binary32 narrowing, `Some` only when lossless
+/// (see [`f64_to_f16_bits_exact`])
+fn f64_to_f32_bits_exact(value: f64) -> Option<u32> {
+    if value.is_nan() {
+        let bits = value.to_bits();
+        let mant = bits & 0x000f_ffff_ffff_ffff;
+        // payload must fit the 23-bit mantissa; cannot alias infinity
+        // (same argument as the f16 NaN case)
+        return (mant & ((1 << 29) - 1) == 0)
+            .then_some(((bits >> 63) as u32) << 31 | 0x7f80_0000 | (mant >> 29) as u32);
+    }
+    // non-NaN f64 -> f32 rounding is fully specified by IEEE 754;
+    // exact iff widening back is bit-identical
+    let narrowed = value as f32;
+    (f64::from(narrowed).to_bits() == value.to_bits()).then(|| narrowed.to_bits())
+}
+
+/// Smallest CBOR float width that encodes `value` with no loss:
+/// every bit, NaN payloads included, survives
+/// `write_float_sz(value, smallest_float_sz(value))`.
+/// Pair the two for
+/// preferred serialization of floats (RFC 8949 §4.2.1).
+///
+/// Note: a NaN whose payload fits a smaller width shortens to *that
+/// payload*, not to the canonical half-width quiet NaN `0xf9 0x7e00`;
+/// strictly canonical writers must map NaN to their canonical pattern
+/// before calling.
+pub fn smallest_float_sz(value: f64) -> Sz {
+    if f64_to_f16_bits_exact(value).is_some() {
+        Sz::Two
+    } else if f64_to_f32_bits_exact(value).is_some() {
+        Sz::Four
+    } else {
+        Sz::Eight
+    }
+}
+
 pub trait Serialize {
     fn serialize<'a>(&self, serializer: &'a mut Serializer) -> Result<&'a mut Serializer>;
 }
@@ -759,6 +834,35 @@ impl Serializer {
         }
     }
 
+    /// write a float using a specific encoding
+    ///
+    /// see `write_special` ([`Special::Float`]) and `Sz`. Floats only have
+    /// 2, 4 and 8 byte encodings (RFC 8949 §3.3), so `sz` must be
+    /// `Sz::Two`, `Sz::Four` or `Sz::Eight` and `value` must be exactly
+    /// representable at that width (NaN payload included); anything else
+    /// returns `Error::InvalidLenPassed`. Round-trips byte-exactly through
+    /// [`Deserializer::float_sz`].
+    ///
+    /// [`Deserializer::float_sz`]: crate::de::Deserializer::float_sz
+    pub fn write_float_sz(&mut self, value: f64, sz: Sz) -> Result<&mut Self> {
+        match sz {
+            Sz::Inline | Sz::One => Err(Error::InvalidLenPassed(sz)),
+            Sz::Two => {
+                let bits = f64_to_f16_bits_exact(value).ok_or(Error::InvalidLenPassed(sz))?;
+                self.write_u8(Type::Special.to_byte(0x19))
+                    .and_then(|s| s.write_u16(bits))
+            }
+            Sz::Four => {
+                let bits = f64_to_f32_bits_exact(value).ok_or(Error::InvalidLenPassed(sz))?;
+                self.write_u8(Type::Special.to_byte(0x1a))
+                    .and_then(|s| s.write_u32(bits))
+            }
+            Sz::Eight => self
+                .write_u8(Type::Special.to_byte(0x1b))
+                .and_then(|s| s.write_f64(value)),
+        }
+    }
+
     /// Convenient member function to chain serialisation
     pub fn serialize<T: Serialize>(&mut self, t: &T) -> Result<&mut Self> {
         Serialize::serialize(t, self)
@@ -1060,6 +1164,172 @@ mod test {
             Special::Float(f64::NEG_INFINITY),
             [0xfb, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00].as_ref()
         ));
+    }
+
+    fn float_sz_bytes(value: f64, sz: Sz) -> Result<Vec<u8>> {
+        let mut se = Serializer::new_vec();
+        se.write_float_sz(value, sz)?;
+        Ok(se.finalize())
+    }
+
+    #[test]
+    fn write_float_sz() {
+        // the same value at every width (RFC 8949 Appendix A: 1.5 = 0xf93e00)
+        assert_eq!(float_sz_bytes(1.5, Sz::Two).unwrap(), [0xf9, 0x3e, 0x00]);
+        assert_eq!(
+            float_sz_bytes(1.5, Sz::Four).unwrap(),
+            [0xfa, 0x3f, 0xc0, 0x00, 0x00]
+        );
+        assert_eq!(
+            float_sz_bytes(1.5, Sz::Eight).unwrap(),
+            [0xfb, 0x3f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        // edge cases at f16: min subnormal, max finite, ±0, ±inf
+        assert_eq!(
+            float_sz_bytes(5.960464477539063e-8, Sz::Two).unwrap(),
+            [0xf9, 0x00, 0x01]
+        );
+        assert_eq!(
+            float_sz_bytes(65504.0, Sz::Two).unwrap(),
+            [0xf9, 0x7b, 0xff]
+        );
+        assert_eq!(float_sz_bytes(-0.0, Sz::Two).unwrap(), [0xf9, 0x80, 0x00]);
+        assert_eq!(
+            float_sz_bytes(f64::NEG_INFINITY, Sz::Two).unwrap(),
+            [0xf9, 0xfc, 0x00]
+        );
+        // NaN payloads narrow when they fit the smaller mantissa
+        let nan16 = f64::from_bits(0x7ff0_0000_0000_0000 | 0x201 << 42);
+        assert_eq!(float_sz_bytes(nan16, Sz::Two).unwrap(), [0xf9, 0x7e, 0x01]);
+        let nan32 = f64::from_bits(0xfff0_0000_0000_0000 | 0x40_0001 << 29);
+        assert_eq!(
+            float_sz_bytes(nan32, Sz::Four).unwrap(),
+            [0xfa, 0xff, 0xc0, 0x00, 0x01]
+        );
+        // f32 subnormal boundaries: min subnormal 2^-149 and multiples
+        // are exact, values needing finer precision are rejected
+        let min_sub = f64::from(f32::from_bits(1));
+        assert_eq!(
+            float_sz_bytes(min_sub, Sz::Four).unwrap(),
+            [0xfa, 0x00, 0x00, 0x00, 0x01]
+        );
+        assert_eq!(
+            float_sz_bytes(min_sub * 3.0, Sz::Four).unwrap(),
+            [0xfa, 0x00, 0x00, 0x00, 0x03]
+        );
+        assert!(float_sz_bytes(min_sub / 2.0, Sz::Four).is_err()); // 2^-150
+        assert!(float_sz_bytes(min_sub * 1.5, Sz::Four).is_err()); // midpoint
+    }
+
+    quickcheck! {
+        // differential against the half crate (the reference f16
+        // implementation): our exact-narrowing decision must match
+        // "does half's rounding round-trip x unchanged?", and on success
+        // produce the same bits
+        fn property_f16_narrowing_matches_half(bits: crate::types::AnyBits, from_f16: bool) -> bool {
+            // random f64 bit patterns are almost never f16-representable,
+            // so half the cases start from a genuine f16 widened by half
+            // itself (also exercising the reference widening path)
+            let x = if from_f16 {
+                half::f16::from_bits(bits.0 as u16).to_f64()
+            } else {
+                f64::from_bits(bits.0)
+            };
+            if x.is_nan() {
+                // NaN exactness is about payload width, where half is not
+                // a fair oracle (it quiets signaling NaNs); NaNs are
+                // covered by the exhaustive byte round-trip test instead
+                return true;
+            }
+            let h = half::f16::from_f64(x);
+            let exact_per_half = h.to_f64().to_bits() == x.to_bits();
+            match f64_to_f16_bits_exact(x) {
+                Some(b) => exact_per_half && b == h.to_bits(),
+                None => !exact_per_half,
+            }
+        }
+    }
+
+    #[test]
+    fn smallest_float_sz_picks_tightest_lossless_width() {
+        let cases: &[(f64, Sz)] = &[
+            (0.0, Sz::Two),
+            (-0.0, Sz::Two),
+            (1.5, Sz::Two),
+            (65504.0, Sz::Two), // max finite f16
+            (f64::INFINITY, Sz::Two),
+            (f64::NAN, Sz::Two),
+            (65520.0, Sz::Four), // just above f16 range, f32-exact
+            (100000.0, Sz::Four),
+            (f64::from(f32::MAX), Sz::Four),
+            (f64::from(f32::from_bits(1)), Sz::Four), // min f32 subnormal
+            (1.1, Sz::Eight),
+            (1e300, Sz::Eight),
+            (f64::MIN_POSITIVE, Sz::Eight),
+        ];
+        for (v, expected) in cases {
+            assert_eq!(smallest_float_sz(*v), *expected, "value: {}", v);
+        }
+    }
+
+    quickcheck! {
+        // the chosen width is lossless (bit-exact through a byte round
+        // trip) and minimal (every smaller width fails)
+        fn property_smallest_float_sz(bits: crate::types::AnyBits, mode: u8) -> bool {
+            // random f64 bits are almost always Sz::Eight; derive some
+            // values from f32/f16 space so Two/Four get real coverage
+            let v = match mode % 3 {
+                0 => f64::from_bits(bits.0),
+                1 => f64::from(f32::from_bits(bits.0 as u32)),
+                _ => half::f16::from_bits(bits.0 as u16).to_f64(),
+            };
+            let sz = smallest_float_sz(v);
+            let mut se = Serializer::new_vec();
+            se.write_float_sz(v, sz).unwrap();
+            let mut raw = crate::de::Deserializer::from(se.finalize());
+            let (back, back_sz) = raw.float_sz().unwrap();
+            if back.to_bits() != v.to_bits() || back_sz != sz {
+                return false;
+            }
+            let smaller: &[Sz] = match sz {
+                Sz::Four => &[Sz::Two],
+                Sz::Eight => &[Sz::Two, Sz::Four],
+                _ => &[],
+            };
+            smaller
+                .iter()
+                .all(|s| Serializer::new_vec().write_float_sz(v, *s).is_err())
+        }
+    }
+
+    #[test]
+    fn write_float_sz_rejects_inexact() {
+        // not exactly representable at the requested width
+        assert_matches!(
+            float_sz_bytes(1.1, Sz::Two),
+            Err(Error::InvalidLenPassed(Sz::Two))
+        );
+        assert_matches!(float_sz_bytes(1.1, Sz::Four), Err(_));
+        // magnitude out of range: overflow and underflow
+        assert_matches!(float_sz_bytes(65520.0, Sz::Two), Err(_));
+        assert_matches!(float_sz_bytes(1e39, Sz::Four), Err(_));
+        assert_matches!(float_sz_bytes(2.9802322387695312e-8, Sz::Two), Err(_)); // 2^-25
+        assert_matches!(float_sz_bytes(1e-50, Sz::Four), Err(_));
+        // f64 subnormals are below every f16/f32 subnormal
+        assert_matches!(float_sz_bytes(f64::MIN_POSITIVE / 2.0, Sz::Two), Err(_));
+        // NaN payload that does not fit the narrower mantissa
+        let nan = f64::from_bits(0x7ff8_0000_0000_0001);
+        assert_matches!(float_sz_bytes(nan, Sz::Two), Err(_));
+        assert_matches!(float_sz_bytes(nan, Sz::Four), Err(_));
+        // floats have no 0, 1 byte encodings (RFC 8949 §3.3)
+        assert_matches!(
+            float_sz_bytes(1.5, Sz::Inline),
+            Err(Error::InvalidLenPassed(Sz::Inline))
+        );
+        assert_matches!(
+            float_sz_bytes(1.5, Sz::One),
+            Err(Error::InvalidLenPassed(Sz::One))
+        );
     }
 
     #[test]

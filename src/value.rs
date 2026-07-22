@@ -269,6 +269,43 @@ mod test {
     }
 
     #[test]
+    fn float() {
+        for f in [
+            0.0,
+            -0.0,
+            1.1,
+            f64::MIN,
+            f64::MAX,
+            f64::INFINITY,
+            f64::MIN_POSITIVE,
+        ] {
+            assert!(test_encode_decode(&Value::Special(SpecialValue::Float(f))).unwrap());
+        }
+    }
+
+    // NaN != NaN, so the PartialEq-based round-trip property can't cover
+    // it; the bits (payload included) must still survive the round-trip
+    #[test]
+    fn float_nan_roundtrip_bits() {
+        for bits in [
+            f64::NAN.to_bits(),
+            0x7ff8_dead_beef_cafe,
+            0xfff0_0000_0000_0001,
+        ] {
+            let mut se = Serializer::new_vec();
+            Value::Special(SpecialValue::Float(f64::from_bits(bits)))
+                .serialize(&mut se)
+                .unwrap();
+            let mut raw = Deserializer::from(se.finalize());
+            let decoded: Value = Deserialize::deserialize(&mut raw).unwrap();
+            match decoded {
+                Value::Special(SpecialValue::Float(f)) => assert_eq!(f.to_bits(), bits),
+                other => panic!("decoded {:?}", other),
+            }
+        }
+    }
+
+    #[test]
     fn i64() {
         assert!(test_encode_decode(&Value::I64(-99)).unwrap());
         assert!(test_encode_decode(&Value::I64(-9999999)).unwrap());
